@@ -19,9 +19,11 @@ import webview
 
 from organizer_core import (
     PROCESS_BY_ID,
+    PROCESS_CONFIGS,
     PROCESS_MODULES,
     DuplicateMeasurementsError,
     export_excel,
+    normalize,
     organize_process,
     read_source,
 )
@@ -79,6 +81,11 @@ class Api:
         self.module_input_paths: dict[str, str] = {c[0]: "" for c in PROCESS_MODULES}
         self.output_paths: dict[str, str] = {c[0]: "" for c in PROCESS_MODULES}
         self.states: dict[str, ModuleState] = {c[0]: ModuleState() for c in PROCESS_MODULES}
+        # Cache of parsed Monitor files, keyed by path with an (mtime, size)
+        # fingerprint so an edited file on disk is re-read automatically.
+        # Lets scan_status() and load_preview() share one parse per file
+        # instead of re-reading the same workbook for every module.
+        self._raw_cache: dict[str, tuple[tuple[int, int], pd.DataFrame]] = {}
 
     def set_window(self, window: webview.Window) -> None:
         self._window = window
@@ -187,6 +194,49 @@ class Api:
             return Path(universal_value)
         return None
 
+    def _read_source_cached(self, path: Path) -> pd.DataFrame:
+        stat = path.stat()
+        fingerprint = (stat.st_mtime_ns, stat.st_size)
+        key = str(path)
+        cached = self._raw_cache.get(key)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        raw = read_source(path)
+        self._raw_cache[key] = (fingerprint, raw)
+        return raw
+
+    def scan_status(self) -> dict[str, Any]:
+        """Per-module data-availability status for the sidebar. For whichever
+        input is currently effective for each module (its own individual
+        input if set, otherwise the universal input), reports how many rows
+        match that module's work center(s) — a fast scan, not a full
+        organize pass, so this is safe to call on every input change."""
+        results: dict[str, Any] = {}
+        for config in PROCESS_CONFIGS:
+            step_id = config.step_id
+            if not config.implemented:
+                results[step_id] = {"status": "not_implemented", "row_count": None, "message": "Output format not defined"}
+                continue
+            source = self._selected_input(step_id)
+            if source is None:
+                results[step_id] = {"status": "no_input", "row_count": None, "message": "No input selected"}
+                continue
+            if not source.is_file():
+                results[step_id] = {"status": "error", "row_count": None, "message": "Selected input is not a valid file"}
+                continue
+            try:
+                raw = self._read_source_cached(source)
+            except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
+                results[step_id] = {"status": "error", "row_count": None, "message": str(exc)}
+                continue
+            accepted = {normalize(item) for item in config.work_centers}
+            count = int(raw["Work center"].map(normalize).isin(accepted).sum())
+            if count == 0:
+                results[step_id] = {"status": "empty", "row_count": 0, "message": "No matching rows found in the selected input"}
+            else:
+                results[step_id] = {"status": "ready", "row_count": count, "message": f"{count} row(s) found for this station"}
+        return results
+
     def load_preview(
         self,
         step_id: str,
@@ -219,7 +269,7 @@ class Api:
 
         state = self.states[step_id]
         try:
-            raw = read_source(source)
+            raw = self._read_source_cached(source)
             data, issues = organize_process(
                 raw, config, node, day_start, evening_start, night_start,
                 duplicate_selections=state.duplicate_selections,

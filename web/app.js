@@ -9,6 +9,7 @@ const state = {
   dayStart: "",
   eveningStart: "",
   nightStart: "",
+  scanStatus: {},
 };
 
 const api = () => window.pywebview.api;
@@ -29,10 +30,10 @@ let initialized = false;
 
 function showBridgeError(message) {
   $("connection-badge").innerHTML =
-    '<span class="h-2 w-2 rounded-full bg-red-700"></span><span>Connection failed</span>';
+    '<span class="status-dot status-dot-red"></span><span>Connection failed</span>';
   const main = document.querySelector("main");
   if (main) {
-    main.innerHTML = `<div class="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700 text-sm">${message}</div>`;
+    main.innerHTML = `<div class="bridge-error">${message}</div>`;
   }
 }
 
@@ -41,12 +42,13 @@ async function init() {
   initialized = true;
 
   $("connection-badge").innerHTML =
-    '<span class="h-2 w-2 rounded-full bg-emerald-500"></span><span>Ready</span>';
+    '<span class="status-dot status-dot-emerald"></span><span>Ready</span>';
 
   try {
     state.modules = await api().list_modules();
     renderSidebar();
     wireStaticHandlers();
+    updateSidebarStatus();
 
     const firstImplemented = state.modules.find((m) => m.implemented) || state.modules[0];
     await selectModule(firstImplemented.step_id);
@@ -88,9 +90,17 @@ function renderSidebar() {
     btn.type = "button";
     btn.className = "module-btn";
     btn.dataset.stepId = mod.step_id;
-    btn.innerHTML =
-      `<span>${mod.step_id}&nbsp;&nbsp;${mod.name}</span>` +
-      (!mod.implemented ? '<span class="badge">Not defined</span>' : "");
+
+    const label = document.createElement("span");
+    label.className = "module-btn-label";
+    label.textContent = `${mod.step_id}  ${mod.name}`;
+    btn.appendChild(label);
+
+    const pill = document.createElement("span");
+    pill.className = "status-pill status-pill-hidden";
+    pill.dataset.stepId = mod.step_id;
+    btn.appendChild(pill);
+
     btn.addEventListener("click", () => selectModule(mod.step_id));
     nav.appendChild(btn);
   });
@@ -100,6 +110,54 @@ function highlightSidebar() {
   document.querySelectorAll(".module-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.stepId === state.active);
   });
+}
+
+// Scans whatever input is currently effective for every module (its own
+// individual input, or the universal input as a fallback) and shows a live
+// row-count status next to each one in the sidebar — this is what makes
+// picking the universal input visibly "reach" every module instead of
+// silently only mattering once you happen to click into one.
+async function updateSidebarStatus() {
+  let status;
+  try {
+    status = await api().scan_status();
+  } catch (err) {
+    return; // Non-critical: leave existing pills as-is if the scan itself fails.
+  }
+  state.scanStatus = status;
+  state.modules.forEach((mod) => {
+    const pill = document.querySelector(`.status-pill[data-step-id="${mod.step_id}"]`);
+    if (!pill) return;
+    applyStatusPill(pill, mod, status[mod.step_id]);
+  });
+}
+
+function applyStatusPill(pill, mod, info) {
+  if (!mod.implemented) {
+    pill.textContent = "Not defined";
+    pill.className = "status-pill status-pill-muted";
+    pill.title = "Output format not defined for this station yet.";
+    return;
+  }
+  if (!info || info.status === "no_input") {
+    pill.textContent = "";
+    pill.className = "status-pill status-pill-hidden";
+    pill.title = "";
+    return;
+  }
+  if (info.status === "ready") {
+    pill.textContent = `${info.row_count} row${info.row_count === 1 ? "" : "s"}`;
+    pill.className = "status-pill status-pill-ready";
+    pill.title = info.message;
+  } else if (info.status === "empty") {
+    pill.textContent = "No data";
+    pill.className = "status-pill status-pill-warning";
+    pill.title = info.message;
+  } else {
+    pill.textContent = "Error";
+    pill.className = "status-pill status-pill-error";
+    pill.title = info.message;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -120,7 +178,6 @@ async function selectModule(stepId) {
     $("module-panel").classList.remove("hidden");
     $("module-panel").classList.add("flex");
 
-    $("module-note").className = "mt-1 text-sm text-emerald-700";
     $("module-note").textContent = `Working module · Monitor work center: ${mod.work_centers}`;
     $("station-input-label").textContent = `Individual ${mod.name} input file`;
     $("module-input-path").value = ctx.module_input || "";
@@ -155,6 +212,7 @@ function wireStaticHandlers() {
       $("universal-input-path").value = res.path;
       applyOutputSuggestion(res.suggested_output);
       resetPreviewUI("Select the Monitor Excel export.");
+      updateSidebarStatus();
     }
   });
 
@@ -162,6 +220,7 @@ function wireStaticHandlers() {
     await api().clear_input("universal");
     $("universal-input-path").value = "";
     resetPreviewUI("Select the Monitor Excel export.");
+    updateSidebarStatus();
   });
 
   $("module-browse").addEventListener("click", async () => {
@@ -170,6 +229,7 @@ function wireStaticHandlers() {
       $("module-input-path").value = res.path;
       applyOutputSuggestion(res.suggested_output);
       resetPreviewUI("Select the Monitor Excel export.");
+      updateSidebarStatus();
     }
   });
 
@@ -177,6 +237,7 @@ function wireStaticHandlers() {
     await api().clear_input(state.active);
     $("module-input-path").value = "";
     resetPreviewUI("Select the Monitor Excel export.");
+    updateSidebarStatus();
   });
 
   $("output-browse").addEventListener("click", async () => {
@@ -334,15 +395,15 @@ function openDuplicateModal(groups) {
   container.innerHTML = "";
   groups.forEach((group) => {
     const box = document.createElement("div");
-    box.className = "rounded-lg border border-slate-200 p-4";
+    box.className = "duplicate-group";
 
     const title = document.createElement("p");
-    title.className = "mb-2 text-sm font-semibold text-slate-700";
+    title.className = "duplicate-group-title";
     title.textContent = `Report ${group.report} — ${group.measurement}`;
     box.appendChild(title);
 
     const select = document.createElement("select");
-    select.className = "w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm";
+    select.className = "input";
     select.dataset.key = group.key;
 
     const blank = document.createElement("option");
@@ -382,13 +443,7 @@ let toastTimer = null;
 function showToast(message, kind) {
   const el = $("toast");
   el.textContent = message;
-  el.classList.remove("hidden");
-  el.style.whiteSpace = "pre-line";
-  const palette =
-    kind === "error"
-      ? "bg-red-50 border-red-200 text-red-700"
-      : "bg-emerald-50 border-emerald-200 text-emerald-700";
-  el.className = `fixed bottom-6 right-6 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg ${palette}`;
+  el.className = `toast ${kind === "error" ? "toast-error" : "toast-success"}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add("hidden"), 6000);
 }
