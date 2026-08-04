@@ -78,6 +78,36 @@ if (bridgeReady()) {
   }, 15000);
 }
 
+// Purely client-side — doesn't need the Python bridge, so it's wired
+// immediately rather than waiting for init().
+wireThemeToggle();
+
+function wireThemeToggle() {
+  const toggle = $("theme-toggle");
+  const iconDark = $("theme-icon-dark");
+  const iconLight = $("theme-icon-light");
+
+  function isDarkActive() {
+    const explicit = document.documentElement.dataset.theme;
+    if (explicit === "dark") return true;
+    if (explicit === "light") return false;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  function syncIcon() {
+    const dark = isDarkActive();
+    iconDark.classList.toggle("hidden", dark);
+    iconLight.classList.toggle("hidden", !dark);
+  }
+
+  toggle.addEventListener("click", () => {
+    document.documentElement.dataset.theme = isDarkActive() ? "light" : "dark";
+    syncIcon();
+  });
+
+  syncIcon();
+}
+
 // ---------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------
@@ -252,8 +282,34 @@ function wireStaticHandlers() {
   $("evening-start").addEventListener("input", (e) => (state.eveningStart = e.target.value));
   $("night-start").addEventListener("input", (e) => (state.nightStart = e.target.value));
 
+  $("node-input").addEventListener("blur", validateNode);
+  $("day-start").addEventListener("blur", validateShiftTimes);
+  $("evening-start").addEventListener("blur", validateShiftTimes);
+  $("night-start").addEventListener("blur", validateShiftTimes);
+
   $("preview-btn").addEventListener("click", runPreview);
   $("export-btn").addEventListener("click", runExport);
+
+  $("redo-duplicates-btn").addEventListener("click", async () => {
+    await api().clear_duplicate_selections(state.active);
+    await runPreview();
+  });
+
+  $("issues-toggle").addEventListener("click", () => {
+    const banner = $("issues-banner");
+    const expanded = banner.classList.toggle("expanded");
+    $("issues-list").classList.toggle("hidden", !expanded);
+  });
+
+  $("error-detail-toggle").addEventListener("click", () => {
+    const detailEl = $("error-detail");
+    const toggle = $("error-detail-toggle");
+    const showing = detailEl.classList.toggle("hidden") === false;
+    toggle.textContent = showing ? "Hide technical details" : "Show technical details";
+  });
+
+  $("export-all-btn").addEventListener("click", runExportAll);
+  $("bulk-export-close").addEventListener("click", closeBulkExportModal);
 
   $("duplicate-cancel").addEventListener("click", async () => {
     closeDuplicateModal();
@@ -304,12 +360,106 @@ function applyOutputSuggestion(path) {
 }
 
 // ---------------------------------------------------------------------
+// Inline field validation
+// ---------------------------------------------------------------------
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function validateNode() {
+  const el = $("node-input");
+  const errorEl = $("node-error");
+  if (!el.value.trim()) {
+    errorEl.textContent = "Node is required — it isn't present in the Monitor export.";
+    errorEl.classList.remove("hidden");
+    el.classList.add("input-invalid");
+    return false;
+  }
+  errorEl.classList.add("hidden");
+  el.classList.remove("input-invalid");
+  return true;
+}
+
+function validateShiftTimes() {
+  const inputs = [$("day-start"), $("evening-start"), $("night-start")];
+  const [day, evening, night] = inputs.map((el) => el.value.trim());
+  const errorEl = $("shift-error");
+
+  let message = "";
+  if (!day || !evening || !night) {
+    message = "Enter all three shift start times.";
+  } else if (![day, evening, night].every((v) => TIME_PATTERN.test(v))) {
+    message = "Shift times must be in 24-hour HH:MM format.";
+  } else if (!(day < evening && evening < night)) {
+    message = "Shift starts must be in order: DAY, then EVENING, then NIGHT.";
+  }
+
+  inputs.forEach((el) => el.classList.toggle("input-invalid", Boolean(message)));
+  errorEl.textContent = message;
+  errorEl.classList.toggle("hidden", !message);
+  return !message;
+}
+
+// ---------------------------------------------------------------------
+// Busy-state helper (loading spinners on Load/Export buttons)
+// ---------------------------------------------------------------------
+
+function setBusy(btn, busy, busyLabel) {
+  const spinner = btn.querySelector(".btn-spinner");
+  const label = btn.querySelector(".btn-label");
+  if (spinner) spinner.classList.toggle("hidden", !busy);
+  if (label) {
+    if (busy) {
+      if (!label.dataset.restore) label.dataset.restore = label.textContent;
+      label.textContent = busyLabel;
+    } else if (label.dataset.restore) {
+      label.textContent = label.dataset.restore;
+      delete label.dataset.restore;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// Error banner (persistent, with expandable technical detail)
+// ---------------------------------------------------------------------
+
+function showErrorBanner(message, detail) {
+  const banner = $("error-banner");
+  banner.classList.remove("hidden");
+  $("error-message").textContent = message;
+  const toggle = $("error-detail-toggle");
+  const detailEl = $("error-detail");
+  if (detail) {
+    toggle.classList.remove("hidden");
+    toggle.textContent = "Show technical details";
+    detailEl.textContent = detail;
+    detailEl.classList.add("hidden");
+  } else {
+    toggle.classList.add("hidden");
+    detailEl.classList.add("hidden");
+  }
+}
+
+function hideErrorBanner() {
+  $("error-banner").classList.add("hidden");
+  $("error-detail").classList.add("hidden");
+}
+
+// ---------------------------------------------------------------------
 // Preview / export
 // ---------------------------------------------------------------------
 
 async function runPreview() {
+  const nodeOk = validateNode();
+  const shiftOk = validateShiftTimes();
+  if (!nodeOk || !shiftOk) {
+    showToast("Fix the highlighted field(s) before loading a preview.", "error");
+    return;
+  }
+
+  hideErrorBanner();
   $("preview-btn").disabled = true;
   $("export-btn").disabled = true;
+  setBusy($("preview-btn"), true, "Loading…");
   setStatus("Reading input…");
 
   const result = await api().load_preview(
@@ -320,6 +470,7 @@ async function runPreview() {
     state.nightStart
   );
 
+  setBusy($("preview-btn"), false);
   $("preview-btn").disabled = false;
 
   if (!result.ok) {
@@ -328,12 +479,17 @@ async function runPreview() {
       return;
     }
     setStatus("Could not organize the selected file.");
-    showToast(result.message || "Something went wrong.", "error");
+    if (result.error === "exception" && result.detail) {
+      showErrorBanner(result.message || "Something went wrong.", result.detail);
+    } else {
+      showToast(result.message || "Something went wrong.", "error");
+    }
     return;
   }
 
   renderPreview(result);
   $("export-btn").disabled = false;
+  $("redo-duplicates-btn").classList.toggle("hidden", !result.has_duplicate_selections);
   const issuesSuffix = result.issue_count ? `; ${result.issue_count} validation issue(s)` : "";
   setStatus(`Preview ready: ${result.row_count} row(s)${issuesSuffix}.`);
 }
@@ -344,8 +500,17 @@ async function runExport() {
     showToast("Select the output Excel file.", "error");
     return;
   }
+
+  const existsCheck = await api().check_output_exists(state.active);
+  if (existsCheck.exists) {
+    const confirmed = await confirmOverwrite(existsCheck.path);
+    if (!confirmed) return;
+  }
+
+  setBusy($("export-btn"), true, "Exporting…");
   $("export-btn").disabled = true;
   const result = await api().export(state.active);
+  setBusy($("export-btn"), false);
   $("export-btn").disabled = false;
   if (result.ok) {
     setStatus(`Export complete: ${basename(result.path)}`);
@@ -353,6 +518,28 @@ async function runExport() {
   } else {
     showToast(result.message || "Export failed.", "error");
   }
+}
+
+function confirmOverwrite(path) {
+  return new Promise((resolve) => {
+    $("overwrite-message").textContent = `"${basename(path)}" already exists and will be replaced. Continue?`;
+    $("overwrite-modal").classList.remove("hidden");
+    $("overwrite-modal").classList.add("flex");
+
+    const confirmBtn = $("overwrite-confirm");
+    const cancelBtn = $("overwrite-cancel");
+    const cleanup = (result) => {
+      $("overwrite-modal").classList.add("hidden");
+      $("overwrite-modal").classList.remove("flex");
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      resolve(result);
+    };
+    const onConfirm = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+  });
 }
 
 function renderPreview(result) {
@@ -384,14 +571,38 @@ function renderPreview(result) {
     $("preview-title").textContent = `Output preview (first ${result.previewed_count} of ${result.row_count} rows)`;
   }
 
-  if (result.issue_count) {
-    $("issues-banner").classList.remove("hidden");
-    $("issues-banner").textContent =
-      `${result.issue_count} validation issue(s) found — unrecognized or missing measurements. ` +
-      `They will be written to the Validation_Issues sheet on export.`;
-  } else {
-    $("issues-banner").classList.add("hidden");
+  renderIssues(result.issue_count, result.issues);
+}
+
+function renderIssues(issueCount, issues) {
+  const banner = $("issues-banner");
+  if (!issueCount) {
+    banner.classList.add("hidden");
+    banner.classList.remove("expanded");
+    $("issues-list").classList.add("hidden");
+    $("issues-list").innerHTML = "";
+    return;
   }
+  banner.classList.remove("hidden");
+  $("issues-summary-text").textContent =
+    `${issueCount} validation issue(s) found — unrecognized or missing measurements. Click to see details.`;
+
+  const list = $("issues-list");
+  list.innerHTML = "";
+  (issues || []).forEach((issue) => {
+    const li = document.createElement("li");
+    const detail = document.createElement("div");
+    detail.className = "issue-detail";
+    detail.textContent = `${issue.Issue}: ${issue.Details}`;
+    li.appendChild(detail);
+    if (issue["Measuring report number"] !== undefined && issue["Measuring report number"] !== null) {
+      const meta = document.createElement("div");
+      meta.className = "issue-meta";
+      meta.textContent = `Measuring report number ${issue["Measuring report number"]}`;
+      li.appendChild(meta);
+    }
+    list.appendChild(li);
+  });
 }
 
 function resetPreviewUI(statusMessage) {
@@ -399,7 +610,9 @@ function resetPreviewUI(statusMessage) {
   $("preview-body").innerHTML = "";
   $("preview-empty").classList.remove("hidden");
   $("preview-title").textContent = "Output preview";
-  $("issues-banner").classList.add("hidden");
+  renderIssues(0, []);
+  hideErrorBanner();
+  $("redo-duplicates-btn").classList.add("hidden");
   $("export-btn").disabled = true;
   setStatus(statusMessage);
 }
@@ -527,6 +740,79 @@ function closeDuplicateModal() {
   $("duplicate-modal").classList.add("hidden");
   $("duplicate-modal").classList.remove("flex");
   $("duplicate-groups").innerHTML = "";
+}
+
+// ---------------------------------------------------------------------
+// Bulk export ("Export all ready modules")
+// ---------------------------------------------------------------------
+
+const CHECK_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>';
+const X_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>';
+
+async function runExportAll() {
+  const nodeOk = validateNode();
+  const shiftOk = validateShiftTimes();
+  if (!nodeOk || !shiftOk) {
+    showToast("Fix the highlighted Node/shift fields before bulk export.", "error");
+    return;
+  }
+
+  const btn = $("export-all-btn");
+  btn.disabled = true;
+  const result = await api().export_all_ready(state.node, state.dayStart, state.eveningStart, state.nightStart);
+  btn.disabled = false;
+
+  renderBulkResults(result.results);
+  updateSidebarStatus();
+  if (result.results.some((r) => r.step_id === state.active)) {
+    await selectModule(state.active);
+  }
+}
+
+function renderBulkResults(results) {
+  const container = $("bulk-export-results");
+  container.innerHTML = "";
+
+  if (results.length === 0) {
+    const p = document.createElement("p");
+    p.className = "text-muted";
+    p.textContent = "No modules currently have matching data to export.";
+    container.appendChild(p);
+  }
+
+  results.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = `bulk-result ${r.ok ? "ok" : "fail"}`;
+
+    const icon = document.createElement("span");
+    icon.className = "bulk-result-icon";
+    icon.innerHTML = r.ok ? CHECK_ICON : X_ICON;
+    row.appendChild(icon);
+
+    const text = document.createElement("div");
+    const name = document.createElement("p");
+    name.className = "bulk-result-name";
+    name.textContent = `${r.step_id}  ${r.name}`;
+    text.appendChild(name);
+
+    const detail = document.createElement("p");
+    detail.className = "bulk-result-detail";
+    detail.textContent = r.ok ? r.path : r.message;
+    text.appendChild(detail);
+
+    row.appendChild(text);
+    container.appendChild(row);
+  });
+
+  $("bulk-export-modal").classList.remove("hidden");
+  $("bulk-export-modal").classList.add("flex");
+}
+
+function closeBulkExportModal() {
+  $("bulk-export-modal").classList.add("hidden");
+  $("bulk-export-modal").classList.remove("flex");
 }
 
 // ---------------------------------------------------------------------

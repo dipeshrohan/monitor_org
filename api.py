@@ -151,6 +151,9 @@ class Api:
         # Lets scan_status() and load_preview() share one parse per file
         # instead of re-reading the same workbook for every module.
         self._raw_cache: dict[str, tuple[tuple[int, int], pd.DataFrame]] = {}
+        # Directory of the most recently picked file (input or output), so
+        # the next file dialog opens there instead of always starting fresh.
+        self._last_directory: str = ""
 
     def set_window(self, window: webview.Window) -> None:
         self._window = window
@@ -194,10 +197,13 @@ class Api:
         """scope is either 'universal' or a process step_id; active_step_id is
         whichever module panel is currently showing in the UI, used to name
         the suggested output file correctly even when scope is 'universal'."""
-        result = self._window.create_file_dialog(webview.OPEN_DIALOG, file_types=OPEN_FILE_TYPES)
+        result = self._window.create_file_dialog(
+            webview.FileDialog.OPEN, directory=self._last_directory, file_types=OPEN_FILE_TYPES
+        )
         path = self._first_path(result)
         if not path:
             return {"path": None}
+        self._last_directory = str(Path(path).parent)
         if scope == "universal":
             self.universal_input_path = path
         else:
@@ -220,7 +226,8 @@ class Api:
 
     def pick_output_file(self, step_id: str, default_name: str = "") -> dict[str, Any]:
         result = self._window.create_file_dialog(
-            webview.SAVE_DIALOG,
+            webview.FileDialog.SAVE,
+            directory=self._last_directory,
             save_filename=default_name or "organized.xlsx",
             file_types=SAVE_FILE_TYPES,
         )
@@ -229,8 +236,17 @@ class Api:
             return {"path": None}
         if not path.lower().endswith(".xlsx"):
             path += ".xlsx"
+        self._last_directory = str(Path(path).parent)
         self.output_paths[step_id] = path
         return {"path": path}
+
+    def check_output_exists(self, step_id: str) -> dict[str, Any]:
+        """Whether the module's currently chosen output path already exists on
+        disk, so the UI can confirm before Export silently overwrites it."""
+        target_text = self.output_paths.get(step_id, "").strip()
+        if not target_text:
+            return {"exists": False, "path": ""}
+        return {"exists": Path(target_text).is_file(), "path": target_text}
 
     @staticmethod
     def _first_path(result: Any) -> str | None:
@@ -361,6 +377,7 @@ class Api:
             "previewed_count": int(len(preview_rows)),
             "issue_count": int(len(issues)),
             "issues": to_jsonable(issues.to_dict("records")) if not issues.empty else [],
+            "has_duplicate_selections": bool(state.duplicate_selections),
         }
 
     def submit_duplicate_selection(self, step_id: str, selections: dict[str, int]) -> dict[str, Any]:
@@ -370,6 +387,12 @@ class Api:
 
     def cancel_duplicate_selection(self, step_id: str) -> dict[str, Any]:
         # Nothing persisted; the caller simply stops the preview flow.
+        return {"ok": True}
+
+    def clear_duplicate_selections(self, step_id: str) -> dict[str, Any]:
+        """Forget this module's previously resolved duplicate choices, so the
+        next Load and preview re-raises them for the user to pick again."""
+        self.states[step_id].duplicate_selections = {}
         return {"ok": True}
 
     # ------------------------------------------------------------------
@@ -391,3 +414,45 @@ class Api:
             return {"ok": False, "message": "Close the output workbook in Excel and export again."}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "message": str(exc)}
+
+    def export_all_ready(
+        self, node: str, day_start: str, evening_start: str, night_start: str
+    ) -> dict[str, Any]:
+        """Load, preview and export every module scan_status() currently shows
+        as 'ready' (has matching data), in one action. Never resolves
+        duplicate measurements on its own — a module that needs manual
+        duplicate resolution is skipped and reported, not guessed at. If a
+        ready module has no output path chosen yet, one is generated the same
+        way the UI suggests one, so this works without having to click into
+        every module first."""
+        status = self.scan_status()
+        results: list[dict[str, Any]] = []
+        for config in PROCESS_CONFIGS:
+            step_id = config.step_id
+            info = status.get(step_id)
+            if not info or info.get("status") != "ready":
+                continue
+
+            preview = self.load_preview(step_id, node, day_start, evening_start, night_start)
+            if not preview["ok"]:
+                if preview.get("error") == "duplicates":
+                    message = "Has duplicate measurements that need manual resolution — open this module to resolve them."
+                else:
+                    message = preview.get("message", "Could not organize this module.")
+                results.append({"step_id": step_id, "name": config.name, "ok": False, "message": message})
+                continue
+
+            if not self.output_paths.get(step_id, "").strip():
+                source = self._selected_input(step_id)
+                if source is not None:
+                    self.output_paths[step_id] = self._suggest_output(step_id, str(source))
+
+            export_result = self.export(step_id)
+            if export_result["ok"]:
+                results.append({"step_id": step_id, "name": config.name, "ok": True, "path": export_result["path"]})
+            else:
+                results.append({
+                    "step_id": step_id, "name": config.name, "ok": False,
+                    "message": export_result.get("message", "Export failed."),
+                })
+        return {"results": results}

@@ -8,6 +8,7 @@ and no internet connection are required to run the app itself.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,13 @@ import webview
 from api import Api
 
 APP_TITLE = "Process Monitor Data Organizer"
+
+# Devtools (right-click -> Inspect, or F12) are on by default while this app
+# is still being tested — they surface real JS errors and the actual
+# pywebview.api behavior directly instead of needing a screenshot round-trip.
+# Set the PROCESS_MONITOR_DEBUG environment variable to "0" to turn them off
+# for a release build, without touching this file.
+DEBUG = os.environ.get("PROCESS_MONITOR_DEBUG", "1") != "0"
 
 
 def resource_path(relative: str) -> Path:
@@ -37,11 +45,7 @@ def main() -> int:
         min_size=(1100, 700),
     )
     api.set_window(window)
-    # debug=True enables the browser devtools (right-click -> Inspect, or F12)
-    # so JS errors and the actual pywebview.api behavior are visible directly
-    # instead of needing a screenshot round-trip. Turn this off (set False)
-    # once the app is stable and before final distribution.
-    webview.start(debug=True)
+    webview.start(debug=DEBUG)
     return 0
 
 

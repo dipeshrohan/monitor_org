@@ -20,9 +20,15 @@
           <p class="app-subtitle">Organize Monitor exports into per-process Excel reports</p>
         </div>
       </div>
-      <div id="connection-badge" class="connection-badge">
-        <span class="status-dot status-dot-amber"></span>
-        <span>Connecting…</span>
+      <div class="flex items-center gap-3">
+        <button id="theme-toggle" class="icon-btn" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">
+          <svg id="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg id="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/></svg>
+        </button>
+        <div id="connection-badge" class="connection-badge">
+          <span class="status-dot status-dot-amber"></span>
+          <span>Connecting…</span>
+        </div>
       </div>
     </header>
 
@@ -38,6 +44,11 @@
         Browse…
       </button>
       <button id="universal-clear" class="btn btn-ghost">Clear</button>
+      <span class="universal-divider"></span>
+      <button id="export-all-btn" class="btn btn-outline btn-icon-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export all ready modules
+      </button>
     </section>
 
     <!-- Workspace -->
@@ -94,23 +105,29 @@
                 <span></span>
 
                 <label class="form-label">Node</label>
-                <input id="node-input" type="text" placeholder="e.g. 4" class="input form-input-narrow" />
+                <div>
+                  <input id="node-input" type="text" placeholder="e.g. 4" class="input form-input-narrow" />
+                  <p id="node-error" class="field-error hidden"></p>
+                </div>
                 <span></span><span></span>
 
                 <label class="form-label">
                   <svg class="inline-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
                   Shift starts (HH:MM)
                 </label>
-                <div class="shift-row">
-                  <span class="shift-field">DAY
-                    <input id="day-start" type="text" placeholder="06:00" class="input shift-input" />
-                  </span>
-                  <span class="shift-field">EVENING
-                    <input id="evening-start" type="text" placeholder="14:00" class="input shift-input" />
-                  </span>
-                  <span class="shift-field">NIGHT
-                    <input id="night-start" type="text" placeholder="22:00" class="input shift-input" />
-                  </span>
+                <div>
+                  <div class="shift-row">
+                    <span class="shift-field">DAY
+                      <input id="day-start" type="text" placeholder="06:00" class="input shift-input" />
+                    </span>
+                    <span class="shift-field">EVENING
+                      <input id="evening-start" type="text" placeholder="14:00" class="input shift-input" />
+                    </span>
+                    <span class="shift-field">NIGHT
+                      <input id="night-start" type="text" placeholder="22:00" class="input shift-input" />
+                    </span>
+                  </div>
+                  <p id="shift-error" class="field-error hidden"></p>
                 </div>
                 <span></span><span></span>
               </div>
@@ -118,12 +135,34 @@
           </section>
 
           <section class="actions-row">
-            <button id="preview-btn" class="btn btn-default">1. Load and preview</button>
-            <button id="export-btn" class="btn btn-default" disabled>2. Export organized Excel</button>
+            <button id="preview-btn" class="btn btn-default">
+              <span class="btn-spinner hidden"></span>
+              <span class="btn-label">1. Load and preview</span>
+            </button>
+            <button id="export-btn" class="btn btn-default" disabled>
+              <span class="btn-spinner hidden"></span>
+              <span class="btn-label">2. Export organized Excel</span>
+            </button>
+            <button id="redo-duplicates-btn" class="btn btn-ghost hidden">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+              Change duplicate selections
+            </button>
             <span id="status-text" class="status-text">Select the Monitor Excel export.</span>
           </section>
 
-          <section id="issues-banner" class="issues-banner hidden"></section>
+          <section id="issues-banner" class="issues-banner hidden">
+            <button id="issues-toggle" class="issues-summary" type="button">
+              <span id="issues-summary-text"></span>
+              <svg class="issues-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <ul id="issues-list" class="issues-list hidden"></ul>
+          </section>
+
+          <section id="error-banner" class="error-banner hidden">
+            <p id="error-message" class="error-message"></p>
+            <button id="error-detail-toggle" class="error-detail-toggle hidden" type="button">Show technical details</button>
+            <pre id="error-detail" class="error-detail hidden"></pre>
+          </section>
 
           <section class="card card-fill">
             <div class="card-header">
@@ -163,6 +202,34 @@
       <div class="modal-footer">
         <button id="duplicate-cancel" class="btn btn-ghost">Cancel</button>
         <button id="duplicate-apply" class="btn btn-default">Use selected rows</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk export results -->
+  <div id="bulk-export-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Export all ready modules</h3>
+        <p class="modal-description">Results for every module that had matching data.</p>
+      </div>
+      <div id="bulk-export-results" class="modal-content"></div>
+      <div class="modal-footer">
+        <button id="bulk-export-close" class="btn btn-default">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overwrite confirmation -->
+  <div id="overwrite-modal" class="modal-overlay hidden">
+    <div class="modal modal-narrow">
+      <div class="modal-header">
+        <h3 class="modal-title">Overwrite existing file?</h3>
+        <p id="overwrite-message" class="modal-description"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="overwrite-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="overwrite-confirm" class="btn btn-default">Overwrite</button>
       </div>
     </div>
   </div>
