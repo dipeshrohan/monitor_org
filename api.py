@@ -67,14 +67,21 @@ class ModuleState:
 
 class Api:
     def __init__(self) -> None:
-        self.window: webview.Window | None = None
+        # Leading underscore matters: pywebview builds window.pywebview.api by
+        # recursively walking every *public* attribute of this instance to
+        # discover exposable methods. Storing the pywebview Window itself as a
+        # public attribute makes that walk descend into the Window's internal
+        # GUI objects (on Windows, WinForms/.NET types like Rectangle for the
+        # window bounds), which then crashes trying to compare those against
+        # unrelated objects during the walk — before the API is ever built.
+        self._window: webview.Window | None = None
         self.universal_input_path: str = ""
         self.module_input_paths: dict[str, str] = {c[0]: "" for c in PROCESS_MODULES}
         self.output_paths: dict[str, str] = {c[0]: "" for c in PROCESS_MODULES}
         self.states: dict[str, ModuleState] = {c[0]: ModuleState() for c in PROCESS_MODULES}
 
     def set_window(self, window: webview.Window) -> None:
-        self.window = window
+        self._window = window
 
     # ------------------------------------------------------------------
     # Module listing
@@ -104,7 +111,7 @@ class Api:
     # ------------------------------------------------------------------
     def pick_input_file(self, scope: str) -> dict[str, Any]:
         """scope is either 'universal' or a process step_id."""
-        result = self.window.create_file_dialog(webview.OPEN_DIALOG, file_types=OPEN_FILE_TYPES)
+        result = self._window.create_file_dialog(webview.OPEN_DIALOG, file_types=OPEN_FILE_TYPES)
         path = self._first_path(result)
         if not path:
             return {"path": None}
@@ -124,7 +131,7 @@ class Api:
         return {"ok": True}
 
     def pick_output_file(self, step_id: str, default_name: str = "") -> dict[str, Any]:
-        result = self.window.create_file_dialog(
+        result = self._window.create_file_dialog(
             webview.SAVE_DIALOG,
             save_filename=default_name or "organized.xlsx",
             file_types=SAVE_FILE_TYPES,
