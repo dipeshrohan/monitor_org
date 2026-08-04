@@ -18,20 +18,23 @@ const basename = (p) => (p || "").split(/[\\/]/).pop();
 // pywebview can inject window.pywebview and fire "pywebviewready" before this
 // script has run and attached its listener (a known race condition) — so check
 // for an already-ready bridge first, and only fall back to the event if it's
-// not there yet. Also poll as a last resort in case neither path fires.
-if (window.pywebview && window.pywebview.api) {
-  init();
-} else {
-  window.addEventListener("pywebviewready", init);
-  const pollForApi = setInterval(() => {
-    if (window.pywebview && window.pywebview.api) {
-      clearInterval(pollForApi);
-      init();
-    }
-  }, 200);
-}
+// not there yet. Checking for the actual method (not just the api object)
+// matters: pywebview can create window.pywebview.api as an empty object
+// briefly before the bound methods land on it, so a truthy-object check can
+// still fire too early. Poll as a last-resort backstop either way.
+const bridgeReady = () =>
+  window.pywebview && window.pywebview.api && typeof window.pywebview.api.list_modules === "function";
 
 let initialized = false;
+
+function showBridgeError(message) {
+  $("connection-badge").innerHTML =
+    '<span class="h-2 w-2 rounded-full bg-red-700"></span><span>Connection failed</span>';
+  const main = document.querySelector("main");
+  if (main) {
+    main.innerHTML = `<div class="rounded-lg border border-red-200 bg-red-50 p-6 text-red-700 text-sm">${message}</div>`;
+  }
+}
 
 async function init() {
   if (initialized) return;
@@ -40,12 +43,37 @@ async function init() {
   $("connection-badge").innerHTML =
     '<span class="h-2 w-2 rounded-full bg-emerald-500"></span><span>Ready</span>';
 
-  state.modules = await api().list_modules();
-  renderSidebar();
-  wireStaticHandlers();
+  try {
+    state.modules = await api().list_modules();
+    renderSidebar();
+    wireStaticHandlers();
 
-  const firstImplemented = state.modules.find((m) => m.implemented) || state.modules[0];
-  await selectModule(firstImplemented.step_id);
+    const firstImplemented = state.modules.find((m) => m.implemented) || state.modules[0];
+    await selectModule(firstImplemented.step_id);
+  } catch (err) {
+    initialized = false;
+    showBridgeError(`Failed to load process modules from the Python backend: ${err && err.message ? err.message : err}`);
+  }
+}
+
+// Kick things off. This runs after init/showBridgeError/initialized are all
+// defined above, so calling init() immediately here (the fast path, when the
+// bridge is already up) can never race the variable/function declarations.
+if (bridgeReady()) {
+  init();
+} else {
+  window.addEventListener("pywebviewready", () => { if (bridgeReady()) init(); });
+  const pollForApi = setInterval(() => {
+    if (bridgeReady()) {
+      clearInterval(pollForApi);
+      init();
+    }
+  }, 200);
+  // Stop polling eventually and surface a real error instead of hanging forever.
+  setTimeout(() => {
+    clearInterval(pollForApi);
+    if (!initialized) showBridgeError("The app's Python backend never connected (window.pywebview.api was not available after 15s).");
+  }, 15000);
 }
 
 // ---------------------------------------------------------------------
