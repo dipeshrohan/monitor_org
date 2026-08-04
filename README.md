@@ -73,16 +73,16 @@ ships pre-installed on Windows 11 and current Windows 10 updates; if it's
 missing, WebView2 offers to install it automatically, or you can bundle
 the [Evergreen Bootstrapper](https://developer.microsoft.com/microsoft-edge/webview2/) alongside the exe.
 
-## One networking caveat
+## No networking dependency
 
-Per the spec, styling uses the Tailwind **CDN** build
-(`cdn.tailwindcss.com`), so the very first paint of the UI needs an
-internet connection to fetch that script; everything else (file
-reading/organizing/exporting, the JS-API bridge) is 100% local and works
-offline. If the target machines are fully air-gapped, swap the CDN
-`<script>` tag in `web/index.html` for a locally bundled Tailwind build
-(e.g. the Tailwind CLI's standalone binary) — the rest of the app is
-unaffected either way.
+Styling is a self-contained stylesheet (`web/styles.css`) rather than the
+Tailwind CDN build. An earlier version of this app loaded Tailwind from
+`cdn.tailwindcss.com`, which is a blocking `<script>` tag — on a machine
+without internet access (or a blocked/slow connection to that CDN), the
+page load stalls before the app's own `app.js` ever runs, so the whole UI
+looks dead: no sidebar, no working buttons. `styles.css` now defines every
+utility class the page actually uses, so the app works fully offline with
+no first-paint network dependency at all.
 
 ## Verification files
 

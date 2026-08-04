@@ -90,6 +90,7 @@ async function selectModule(stepId) {
     $("module-panel").classList.add("hidden");
     $("module-panel").classList.remove("flex");
     $("not-implemented-panel").classList.remove("hidden");
+    $("module-note").textContent = "";
     const source = mod.work_centers ? `Monitor work center: ${mod.work_centers}` : "No Monitor work center confirmed";
     $("not-implemented-message").textContent =
       `${source} · Output format not defined. This module cannot preview or export yet.`;
