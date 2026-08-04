@@ -37,7 +37,11 @@ def main() -> int:
         min_size=(1100, 700),
     )
     api.set_window(window)
-    webview.start()
+    # debug=True enables the browser devtools (right-click -> Inspect, or F12)
+    # so JS errors and the actual pywebview.api behavior are visible directly
+    # instead of needing a screenshot round-trip. Turn this off (set False)
+    # once the app is stable and before final distribution.
+    webview.start(debug=True)
     return 0
 
 
