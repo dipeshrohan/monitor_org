@@ -15,9 +15,28 @@ const api = () => window.pywebview.api;
 const $ = (id) => document.getElementById(id);
 const basename = (p) => (p || "").split(/[\\/]/).pop();
 
-window.addEventListener("pywebviewready", init);
+// pywebview can inject window.pywebview and fire "pywebviewready" before this
+// script has run and attached its listener (a known race condition) — so check
+// for an already-ready bridge first, and only fall back to the event if it's
+// not there yet. Also poll as a last resort in case neither path fires.
+if (window.pywebview && window.pywebview.api) {
+  init();
+} else {
+  window.addEventListener("pywebviewready", init);
+  const pollForApi = setInterval(() => {
+    if (window.pywebview && window.pywebview.api) {
+      clearInterval(pollForApi);
+      init();
+    }
+  }, 200);
+}
+
+let initialized = false;
 
 async function init() {
+  if (initialized) return;
+  initialized = true;
+
   $("connection-badge").innerHTML =
     '<span class="h-2 w-2 rounded-full bg-emerald-500"></span><span>Ready</span>';
 
