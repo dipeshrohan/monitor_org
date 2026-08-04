@@ -193,12 +193,17 @@ class Api:
     # ------------------------------------------------------------------
     # File dialogs
     # ------------------------------------------------------------------
+    # Deliberately webview.OPEN_DIALOG / webview.SAVE_DIALOG, not the newer
+    # webview.FileDialog.OPEN / .SAVE: the newer enum only exists starting in
+    # pywebview 6.x, but requirements.txt pins pywebview<6.0. Using it crashed
+    # with AttributeError on an actual pinned-version (5.4) install. The old
+    # constants raise a harmless deprecation warning on 6.x but work on both.
     def pick_input_file(self, scope: str, active_step_id: str) -> dict[str, Any]:
         """scope is either 'universal' or a process step_id; active_step_id is
         whichever module panel is currently showing in the UI, used to name
         the suggested output file correctly even when scope is 'universal'."""
         result = self._window.create_file_dialog(
-            webview.FileDialog.OPEN, directory=self._last_directory, file_types=OPEN_FILE_TYPES
+            webview.OPEN_DIALOG, directory=self._last_directory, file_types=OPEN_FILE_TYPES
         )
         path = self._first_path(result)
         if not path:
@@ -226,7 +231,7 @@ class Api:
 
     def pick_output_file(self, step_id: str, default_name: str = "") -> dict[str, Any]:
         result = self._window.create_file_dialog(
-            webview.FileDialog.SAVE,
+            webview.SAVE_DIALOG,
             directory=self._last_directory,
             save_filename=default_name or "organized.xlsx",
             file_types=SAVE_FILE_TYPES,
