@@ -297,6 +297,7 @@ html, body {
 .status-pill-ready { background: var(--success-bg); color: var(--success-foreground); }
 .status-pill-warning { background: var(--warning-bg); color: var(--warning-foreground); }
 .status-pill-error { background: var(--destructive-bg); color: var(--destructive-foreground); }
+.status-pill-scanning { background: var(--muted); color: var(--muted-foreground); font-style: italic; }
 
 /* ---- Content ---- */
 

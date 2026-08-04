@@ -2,13 +2,16 @@
  * Talks to the Python backend exclusively through window.pywebview.api.
  */
 
+// Node and shift start times are global settings that apply to every
+// module, not per-module state — the defaults below match the form's
+// static HTML values so the two stay in sync from the very first render.
 const state = {
   modules: [],
   active: null,
-  node: "",
-  dayStart: "",
-  eveningStart: "",
-  nightStart: "",
+  node: "1",
+  dayStart: "07:00",
+  eveningStart: "15:00",
+  nightStart: "23:00",
   scanStatus: {},
 };
 
@@ -147,19 +150,44 @@ function highlightSidebar() {
 // row-count status next to each one in the sidebar — this is what makes
 // picking the universal input visibly "reach" every module instead of
 // silently only mattering once you happen to click into one.
+//
+// Resolved one module at a time (not one batch call) so the sidebar fills
+// in incrementally as each result comes back, instead of sitting empty and
+// then suddenly showing every count at once. The underlying file is only
+// actually parsed once regardless (cached in Api._read_source_cached), so
+// this doesn't add real scan time — it spreads the same work across ~11
+// quick round-trips so progress is visible.
 async function updateSidebarStatus() {
-  let status;
-  try {
-    status = await api().scan_status();
-  } catch (err) {
-    return; // Non-critical: leave existing pills as-is if the scan itself fails.
-  }
-  state.scanStatus = status;
-  state.modules.forEach((mod) => {
+  const implementedModules = state.modules.filter((m) => m.implemented);
+
+  // Not-implemented modules are a static fact, not something to scan.
+  state.modules
+    .filter((m) => !m.implemented)
+    .forEach((mod) => {
+      const pill = document.querySelector(`.status-pill[data-step-id="${mod.step_id}"]`);
+      if (pill) applyStatusPill(pill, mod, null);
+    });
+
+  implementedModules.forEach((mod) => {
     const pill = document.querySelector(`.status-pill[data-step-id="${mod.step_id}"]`);
-    if (!pill) return;
-    applyStatusPill(pill, mod, status[mod.step_id]);
+    if (pill) {
+      pill.textContent = "Scanning…";
+      pill.className = "status-pill status-pill-scanning";
+      pill.title = "";
+    }
   });
+
+  for (const mod of implementedModules) {
+    const pill = document.querySelector(`.status-pill[data-step-id="${mod.step_id}"]`);
+    let info;
+    try {
+      info = await api().scan_module_status(mod.step_id);
+      state.scanStatus[mod.step_id] = info;
+    } catch (err) {
+      info = { status: "error", row_count: null, message: (err && err.message) || String(err) };
+    }
+    if (pill) applyStatusPill(pill, mod, info);
+  }
 }
 
 function applyStatusPill(pill, mod, info) {
@@ -213,11 +241,6 @@ async function selectModule(stepId) {
     $("module-input-path").value = ctx.module_input || "";
     $("output-path").value = ctx.output_path || "";
     $("preview-title").textContent = `${mod.name} output preview`;
-
-    $("node-input").value = state.node;
-    $("day-start").value = state.dayStart;
-    $("evening-start").value = state.eveningStart;
-    $("night-start").value = state.nightStart;
 
     resetPreviewUI("Select the Monitor Excel export.");
   } else {

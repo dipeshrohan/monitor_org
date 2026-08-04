@@ -291,37 +291,39 @@ class Api:
         self._raw_cache[key] = (fingerprint, raw)
         return raw
 
+    def scan_module_status(self, step_id: str) -> dict[str, Any]:
+        """Data-availability status for one module, for whichever input is
+        currently effective for it (its own individual input if set,
+        otherwise the universal input) — a fast scan of row counts, not a
+        full organize pass. Callable per-module so the UI can show
+        incremental progress across the sidebar instead of everything
+        updating at once; the underlying parsed file is cached, so scanning
+        every module this way still only reads the file from disk once."""
+        config = PROCESS_BY_ID.get(step_id)
+        if config is None:
+            return {"status": "error", "row_count": None, "message": "Unknown process module."}
+        if not config.implemented:
+            return {"status": "not_implemented", "row_count": None, "message": "Output format not defined"}
+        source = self._selected_input(step_id)
+        if source is None:
+            return {"status": "no_input", "row_count": None, "message": "No input selected"}
+        if not source.is_file():
+            return {"status": "error", "row_count": None, "message": "Selected input is not a valid file"}
+        try:
+            raw = self._read_source_cached(source)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
+            return {"status": "error", "row_count": None, "message": str(exc)}
+        accepted = {normalize(item) for item in config.work_centers}
+        count = int(raw["Work center"].map(normalize).isin(accepted).sum())
+        if count == 0:
+            return {"status": "empty", "row_count": 0, "message": "No matching rows found in the selected input"}
+        return {"status": "ready", "row_count": count, "message": f"{count} row(s) found for this station"}
+
     def scan_status(self) -> dict[str, Any]:
-        """Per-module data-availability status for the sidebar. For whichever
-        input is currently effective for each module (its own individual
-        input if set, otherwise the universal input), reports how many rows
-        match that module's work center(s) — a fast scan, not a full
-        organize pass, so this is safe to call on every input change."""
-        results: dict[str, Any] = {}
-        for config in PROCESS_CONFIGS:
-            step_id = config.step_id
-            if not config.implemented:
-                results[step_id] = {"status": "not_implemented", "row_count": None, "message": "Output format not defined"}
-                continue
-            source = self._selected_input(step_id)
-            if source is None:
-                results[step_id] = {"status": "no_input", "row_count": None, "message": "No input selected"}
-                continue
-            if not source.is_file():
-                results[step_id] = {"status": "error", "row_count": None, "message": "Selected input is not a valid file"}
-                continue
-            try:
-                raw = self._read_source_cached(source)
-            except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
-                results[step_id] = {"status": "error", "row_count": None, "message": str(exc)}
-                continue
-            accepted = {normalize(item) for item in config.work_centers}
-            count = int(raw["Work center"].map(normalize).isin(accepted).sum())
-            if count == 0:
-                results[step_id] = {"status": "empty", "row_count": 0, "message": "No matching rows found in the selected input"}
-            else:
-                results[step_id] = {"status": "ready", "row_count": count, "message": f"{count} row(s) found for this station"}
-        return results
+        """All modules' scan_module_status() in one batch call. Used
+        internally (export_all_ready) and kept for any caller that wants the
+        full picture at once rather than incremental per-module progress."""
+        return {config.step_id: self.scan_module_status(config.step_id) for config in PROCESS_CONFIGS}
 
     def load_preview(
         self,

@@ -51,6 +51,37 @@
       </button>
     </section>
 
+    <!-- Global settings — apply to every module, not just the one showing -->
+    <section class="universal-bar">
+      <span class="universal-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="17" x2="17" y2="17"/></svg>
+      </span>
+      <span class="universal-label">Node <span class="text-muted">(all modules)</span></span>
+      <div>
+        <input id="node-input" type="text" placeholder="e.g. 4" class="input form-input-narrow" value="1" />
+        <p id="node-error" class="field-error hidden"></p>
+      </div>
+      <span class="universal-divider"></span>
+      <span class="universal-label">
+        <svg class="inline-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        Shift starts (HH:MM) <span class="text-muted">(all modules)</span>
+      </span>
+      <div>
+        <div class="shift-row">
+          <span class="shift-field">DAY
+            <input id="day-start" type="text" placeholder="07:00" class="input shift-input" value="07:00" />
+          </span>
+          <span class="shift-field">EVENING
+            <input id="evening-start" type="text" placeholder="15:00" class="input shift-input" value="15:00" />
+          </span>
+          <span class="shift-field">NIGHT
+            <input id="night-start" type="text" placeholder="23:00" class="input shift-input" value="23:00" />
+          </span>
+        </div>
+        <p id="shift-error" class="field-error hidden"></p>
+      </div>
+    </section>
+
     <!-- Workspace -->
     <div class="workspace">
       <!-- Sidebar -->
@@ -102,34 +133,6 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2z"/><path d="M2.5 10h17l-2 8.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5z"/></svg>
                   Browse…
                 </button>
-                <span></span>
-
-                <label class="form-label">Node</label>
-                <div>
-                  <input id="node-input" type="text" placeholder="e.g. 4" class="input form-input-narrow" />
-                  <p id="node-error" class="field-error hidden"></p>
-                </div>
-                <span></span><span></span>
-
-                <label class="form-label">
-                  <svg class="inline-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                  Shift starts (HH:MM)
-                </label>
-                <div>
-                  <div class="shift-row">
-                    <span class="shift-field">DAY
-                      <input id="day-start" type="text" placeholder="06:00" class="input shift-input" />
-                    </span>
-                    <span class="shift-field">EVENING
-                      <input id="evening-start" type="text" placeholder="14:00" class="input shift-input" />
-                    </span>
-                    <span class="shift-field">NIGHT
-                      <input id="night-start" type="text" placeholder="22:00" class="input shift-input" />
-                    </span>
-                  </div>
-                  <p id="shift-error" class="field-error hidden"></p>
-                </div>
-                <span></span><span></span>
               </div>
             </div>
           </section>
