@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Process Monitor Data Organizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="h-screen w-screen overflow-hidden bg-slate-100 text-slate-800 antialiased">
+  <div class="flex h-full w-full flex-col">
+    <!-- Title bar -->
+    <header class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 shadow-sm">
+      <div>
+        <h1 class="text-lg font-semibold text-slate-900">Process Monitor Data Organizer</h1>
+        <p class="text-xs text-slate-500">Organize Monitor exports into per-process Excel reports</p>
+      </div>
+      <div id="connection-badge" class="flex items-center gap-2 text-xs text-slate-400">
+        <span class="h-2 w-2 rounded-full bg-amber-400"></span>
+        <span>Connecting…</span>
+      </div>
+    </header>
+
+    <!-- Universal input -->
+    <section class="border-b border-slate-200 bg-white px-6 py-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm font-medium text-slate-700 whitespace-nowrap">Universal input (all stations)</span>
+        <input id="universal-input-path" type="text" readonly placeholder="No file selected"
+          class="min-w-[220px] flex-1 rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-600" />
+        <button id="universal-browse" class="btn-secondary">Browse…</button>
+        <button id="universal-clear" class="btn-ghost">Clear</button>
+      </div>
+    </section>
+
+    <!-- Workspace -->
+    <div class="flex min-h-0 flex-1">
+      <!-- Sidebar -->
+      <aside class="w-72 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-3">
+        <h2 class="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Process modules</h2>
+        <nav id="module-list" class="flex flex-col gap-1"></nav>
+      </aside>
+
+      <!-- Content -->
+      <main class="flex min-w-0 flex-1 flex-col overflow-y-auto p-6">
+        <div class="mb-4">
+          <h2 id="module-title" class="text-xl font-bold text-slate-900">—</h2>
+          <p id="module-note" class="mt-1 text-sm text-emerald-700"></p>
+        </div>
+
+        <!-- Not implemented notice -->
+        <div id="not-implemented-panel" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-800">
+          <p id="not-implemented-message" class="text-sm"></p>
+        </div>
+
+        <!-- Implemented module panel -->
+        <div id="module-panel" class="hidden flex-1 flex-col gap-5">
+          <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 class="mb-4 text-sm font-semibold text-slate-700">Station input and output</h3>
+            <div class="grid grid-cols-[160px_1fr_auto_auto] items-center gap-x-3 gap-y-3">
+              <label class="text-sm text-slate-600" id="station-input-label">Individual input file</label>
+              <input id="module-input-path" type="text" readonly placeholder="No file selected"
+                class="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-600" />
+              <button id="module-browse" class="btn-secondary">Browse…</button>
+              <button id="module-clear" class="btn-ghost">Clear</button>
+
+              <label class="text-sm text-slate-600">Output Excel file</label>
+              <input id="output-path" type="text" readonly placeholder="Choose where to save the result"
+                class="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-600" />
+              <button id="output-browse" class="btn-secondary">Browse…</button>
+              <span></span>
+
+              <label class="text-sm text-slate-600">Node</label>
+              <input id="node-input" type="text" placeholder="e.g. 4"
+                class="w-32 justify-self-start rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+              <span></span><span></span>
+
+              <label class="text-sm text-slate-600">Shift starts (HH:MM)</label>
+              <div class="flex items-center gap-4">
+                <span class="flex items-center gap-1 text-xs text-slate-500">DAY
+                  <input id="day-start" type="text" placeholder="06:00" class="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+                </span>
+                <span class="flex items-center gap-1 text-xs text-slate-500">EVENING
+                  <input id="evening-start" type="text" placeholder="14:00" class="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+                </span>
+                <span class="flex items-center gap-1 text-xs text-slate-500">NIGHT
+                  <input id="night-start" type="text" placeholder="22:00" class="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+                </span>
+              </div>
+              <span></span><span></span>
+            </div>
+          </section>
+
+          <section class="flex flex-wrap items-center gap-3">
+            <button id="preview-btn" class="btn-primary">1. Load and preview</button>
+            <button id="export-btn" class="btn-primary" disabled>2. Export organized Excel</button>
+            <span id="status-text" class="text-sm text-slate-500">Select the Monitor Excel export.</span>
+          </section>
+
+          <section id="issues-banner" class="hidden rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"></section>
+
+          <section class="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 id="preview-title" class="mb-3 text-sm font-semibold text-slate-700">Output preview</h3>
+            <div class="min-h-0 flex-1 overflow-auto rounded-md border border-slate-100">
+              <table id="preview-table" class="w-full border-collapse text-xs">
+                <thead id="preview-head" class="sticky top-0 bg-slate-50"></thead>
+                <tbody id="preview-body"></tbody>
+              </table>
+              <p id="preview-empty" class="p-6 text-center text-sm text-slate-400">No data loaded yet. Click "Load and preview".</p>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Duplicate resolution modal -->
+  <div id="duplicate-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-6">
+    <div class="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl">
+      <div class="border-b border-slate-200 px-6 py-4">
+        <h3 class="text-lg font-semibold text-slate-900">Select duplicate measurements</h3>
+        <p class="mt-1 text-sm text-slate-500">The Monitor file contains duplicate measurements. Choose the source row to use for each item.</p>
+      </div>
+      <div id="duplicate-groups" class="flex-1 space-y-4 overflow-y-auto px-6 py-4"></div>
+      <div class="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">
+        <button id="duplicate-cancel" class="btn-ghost">Cancel</button>
+        <button id="duplicate-apply" class="btn-primary">Use selected rows</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 hidden max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
