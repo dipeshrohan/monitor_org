@@ -263,13 +263,35 @@ function wireStaticHandlers() {
   });
 
   $("duplicate-apply").addEventListener("click", async () => {
-    const selects = Array.from(document.querySelectorAll("#duplicate-groups select"));
-    if (selects.some((sel) => !sel.value)) {
-      showToast("Select one source row for every duplicate measurement.", "error");
+    const records = Array.from(document.querySelectorAll(".duplicate-record"));
+    const selections = {};
+    let allAnswered = true;
+
+    records.forEach((box) => {
+      if (box.dataset.mode === "record") {
+        const selectedCard = box.querySelector(".candidate-card.selected");
+        if (!selectedCard) {
+          allAnswered = false;
+          return;
+        }
+        Object.assign(selections, JSON.parse(selectedCard.dataset.selections));
+      } else {
+        const selects = Array.from(box.querySelectorAll("select"));
+        selects.forEach((sel) => {
+          if (!sel.value) {
+            allAnswered = false;
+            return;
+          }
+          selections[sel.dataset.key] = parseInt(sel.value, 10);
+        });
+      }
+    });
+
+    if (!allAnswered) {
+      showToast("Resolve every duplicated record before continuing.", "error");
       return;
     }
-    const selections = {};
-    selects.forEach((sel) => (selections[sel.dataset.key] = parseInt(sel.value, 10)));
+
     closeDuplicateModal();
     await api().submit_duplicate_selection(state.active, selections);
     setStatus("Applying selected duplicate measurements…");
@@ -302,7 +324,7 @@ async function runPreview() {
 
   if (!result.ok) {
     if (result.error === "duplicates") {
-      openDuplicateModal(result.groups);
+      openDuplicateModal(result.clusters);
       return;
     }
     setStatus("Could not organize the selected file.");
@@ -390,17 +412,93 @@ function setStatus(text) {
 // Duplicate resolution modal
 // ---------------------------------------------------------------------
 
-function openDuplicateModal(groups) {
+function openDuplicateModal(clusters) {
   const container = $("duplicate-groups");
   container.innerHTML = "";
-  groups.forEach((group) => {
+
+  clusters.forEach((cluster) => {
     const box = document.createElement("div");
-    box.className = "duplicate-group";
+    box.className = "duplicate-record";
+    box.dataset.mode = cluster.mode;
+
+    const title = document.createElement("p");
+    title.className = "duplicate-record-title";
+    title.textContent = `Report ${cluster.report}`;
+    box.appendChild(title);
+
+    if (cluster.mode === "record") {
+      renderRecordCandidates(box, cluster);
+    } else {
+      renderFieldFallback(box, cluster);
+    }
+
+    container.appendChild(box);
+  });
+
+  $("duplicate-modal").classList.remove("hidden");
+  $("duplicate-modal").classList.add("flex");
+}
+
+// Whole record was entered twice (or more) as a block: every affected
+// measurement moves together, so this shows one candidate per submission —
+// click a card to pick that entire version, not one dropdown per field.
+function renderRecordCandidates(box, cluster) {
+  const subtitle = document.createElement("p");
+  subtitle.className = "duplicate-record-subtitle";
+  const n = cluster.measurements.length;
+  subtitle.textContent = `${n} measurement${n === 1 ? "" : "s"} duplicated together — pick which submission is correct.`;
+  box.appendChild(subtitle);
+
+  const row = document.createElement("div");
+  row.className = "candidate-row";
+
+  cluster.candidates.forEach((candidate) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "candidate-card";
+    card.dataset.selections = JSON.stringify(candidate.selections);
+
+    const header = document.createElement("div");
+    header.className = "candidate-card-header";
+    header.textContent = `Source row ${candidate.source_row}`;
+    card.appendChild(header);
+
+    const list = document.createElement("dl");
+    list.className = "candidate-value-list";
+    Object.entries(candidate.values).forEach(([measurement, value]) => {
+      const dt = document.createElement("dt");
+      dt.textContent = measurement;
+      const dd = document.createElement("dd");
+      dd.textContent = value === null || value === undefined || value === "" ? "—" : value;
+      list.appendChild(dt);
+      list.appendChild(dd);
+    });
+    card.appendChild(list);
+
+    card.addEventListener("click", () => {
+      row.querySelectorAll(".candidate-card").forEach((el) => el.classList.remove("selected"));
+      card.classList.add("selected");
+    });
+
+    row.appendChild(card);
+  });
+
+  box.appendChild(row);
+}
+
+// Rare fallback: this record's affected measurements don't share the same
+// number of duplicate entries (only some fields were individually
+// duplicated), so a single "pick the record" choice wouldn't make sense —
+// resolve those specific fields one at a time instead.
+function renderFieldFallback(box, cluster) {
+  cluster.groups.forEach((group) => {
+    const fieldBox = document.createElement("div");
+    fieldBox.className = "duplicate-group";
 
     const title = document.createElement("p");
     title.className = "duplicate-group-title";
-    title.textContent = `Report ${group.report} — ${group.measurement}`;
-    box.appendChild(title);
+    title.textContent = group.measurement;
+    fieldBox.appendChild(title);
 
     const select = document.createElement("select");
     select.className = "input";
@@ -420,12 +518,9 @@ function openDuplicateModal(groups) {
       select.appendChild(opt);
     });
 
-    box.appendChild(select);
-    container.appendChild(box);
+    fieldBox.appendChild(select);
+    box.appendChild(fieldBox);
   });
-
-  $("duplicate-modal").classList.remove("hidden");
-  $("duplicate-modal").classList.add("flex");
 }
 
 function closeDuplicateModal() {

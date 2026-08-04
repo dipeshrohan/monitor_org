@@ -60,6 +60,71 @@ def to_jsonable(value: Any) -> Any:
     return value
 
 
+def cluster_duplicate_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cluster per-measurement duplicate groups (from DuplicateMeasurementsError,
+    already run through to_jsonable) by the record they belong to, so the UI can
+    offer one interactive choice per duplicated record instead of one dropdown
+    per affected measurement field.
+
+    A record's measurements are "uniform" when every one of them has the same
+    number of candidate source rows — i.e. the whole record was entered as a
+    duplicated block, not just one field typoed into two entries. Sorting each
+    measurement's choices by source row and pairing by position turns that into
+    a small set of whole-record candidates: candidate 0 is "the first time this
+    record was entered", candidate 1 is "the second time", etc., each carrying
+    every measurement's value for that entry plus the selection map needed to
+    resolve every one of them at once.
+
+    Non-uniform records (only some fields were individually duplicated) fall
+    back to the original per-field choices, unchanged.
+    """
+    buckets: dict[tuple[Any, Any, Any], list[dict[str, Any]]] = {}
+    order: list[tuple[Any, Any, Any]] = []
+    for group in groups:
+        first_choice = group["choices"][0]
+        record_id = (group["report"], first_choice["date"], first_choice["batch"])
+        if record_id not in buckets:
+            buckets[record_id] = []
+            order.append(record_id)
+        buckets[record_id].append(group)
+
+    clusters: list[dict[str, Any]] = []
+    for record_id in order:
+        report, date, batch = record_id
+        member_groups = buckets[record_id]
+        for group in member_groups:
+            group["choices"] = sorted(group["choices"], key=lambda c: c["source_row"])
+        candidate_counts = {len(group["choices"]) for group in member_groups}
+
+        if len(candidate_counts) == 1:
+            n = next(iter(candidate_counts))
+            candidates = []
+            for i in range(n):
+                candidates.append({
+                    "candidate_index": i,
+                    "source_row": member_groups[0]["choices"][i]["source_row"],
+                    "values": {group["measurement"]: group["choices"][i]["value"] for group in member_groups},
+                    "selections": {group["key"]: group["choices"][i]["index"] for group in member_groups},
+                })
+            clusters.append({
+                "mode": "record",
+                "report": report,
+                "date": date,
+                "batch": batch,
+                "measurements": [group["measurement"] for group in member_groups],
+                "candidates": candidates,
+            })
+        else:
+            clusters.append({
+                "mode": "fields",
+                "report": report,
+                "date": date,
+                "batch": batch,
+                "groups": member_groups,
+            })
+    return clusters
+
+
 class ModuleState:
     def __init__(self) -> None:
         self.data: pd.DataFrame | None = None
@@ -275,7 +340,8 @@ class Api:
                 duplicate_selections=state.duplicate_selections,
             )
         except DuplicateMeasurementsError as exc:
-            return {"ok": False, "error": "duplicates", "groups": to_jsonable(exc.groups)}
+            clusters = cluster_duplicate_groups(to_jsonable(exc.groups))
+            return {"ok": False, "error": "duplicates", "clusters": clusters}
         except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
             return {
                 "ok": False,
