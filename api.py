@@ -99,18 +99,29 @@ class Api:
 
     def get_context(self, step_id: str) -> dict[str, Any]:
         state = self.states[step_id]
+        output_path = self.output_paths.get(step_id, "")
+        if not output_path:
+            # No output chosen yet for this module. If an input is already
+            # available (module-specific or universal), show a live
+            # suggestion so switching to a module doesn't leave the output
+            # box blank when there's actually something to organize.
+            source = self._selected_input(step_id)
+            if source is not None:
+                output_path = self._suggest_output(step_id, str(source))
         return {
             "universal_input": self.universal_input_path,
             "module_input": self.module_input_paths.get(step_id, ""),
-            "output_path": self.output_paths.get(step_id, ""),
+            "output_path": output_path,
             "has_preview": state.data is not None,
         }
 
     # ------------------------------------------------------------------
     # File dialogs
     # ------------------------------------------------------------------
-    def pick_input_file(self, scope: str) -> dict[str, Any]:
-        """scope is either 'universal' or a process step_id."""
+    def pick_input_file(self, scope: str, active_step_id: str) -> dict[str, Any]:
+        """scope is either 'universal' or a process step_id; active_step_id is
+        whichever module panel is currently showing in the UI, used to name
+        the suggested output file correctly even when scope is 'universal'."""
         result = self._window.create_file_dialog(webview.OPEN_DIALOG, file_types=OPEN_FILE_TYPES)
         path = self._first_path(result)
         if not path:
@@ -120,7 +131,12 @@ class Api:
         else:
             self.module_input_paths[scope] = path
             self.states[scope] = ModuleState()
-        return {"path": path, "suggested_output": self._suggest_output(scope if scope != "universal" else None, path)}
+        # Persist the suggestion immediately, not just display it: otherwise
+        # the output box can show a filename that Export never actually sees,
+        # since only pick_output_file() used to write to self.output_paths.
+        suggested = self._suggest_output(active_step_id, path)
+        self.output_paths[active_step_id] = suggested
+        return {"path": path, "suggested_output": suggested}
 
     def clear_input(self, scope: str) -> dict[str, Any]:
         if scope == "universal":
@@ -152,22 +168,12 @@ class Api:
             return result[0] if result else None
         return str(result)
 
-    def _suggest_output(self, step_id: str | None, chosen_path: str) -> str:
-        active = step_id or next(iter(self.states))
-        config = PROCESS_BY_ID[active]
+    def _suggest_output(self, step_id: str, chosen_path: str) -> str:
+        config = PROCESS_BY_ID[step_id]
         import re as _re
         safe_name = _re.sub(r"[^A-Za-z0-9]+", "_", config.name).strip("_")
         p = Path(chosen_path)
         return str(p.with_name(p.stem + f"_{safe_name}_Organized.xlsx"))
-
-    def suggest_output_for_module(self, step_id: str) -> dict[str, Any]:
-        source = self._selected_input(step_id)
-        if source is None:
-            return {"path": None}
-        config = PROCESS_BY_ID[step_id]
-        import re as _re
-        safe_name = _re.sub(r"[^A-Za-z0-9]+", "_", config.name).strip("_")
-        return {"path": str(source.with_name(source.stem + f"_{safe_name}_Organized.xlsx"))}
 
     # ------------------------------------------------------------------
     # Preview / organize

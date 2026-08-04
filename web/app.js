@@ -150,7 +150,7 @@ async function selectModule(stepId) {
 
 function wireStaticHandlers() {
   $("universal-browse").addEventListener("click", async () => {
-    const res = await api().pick_input_file("universal");
+    const res = await api().pick_input_file("universal", state.active);
     if (res.path) {
       $("universal-input-path").value = res.path;
       applyOutputSuggestion(res.suggested_output);
@@ -165,7 +165,7 @@ function wireStaticHandlers() {
   });
 
   $("module-browse").addEventListener("click", async () => {
-    const res = await api().pick_input_file(state.active);
+    const res = await api().pick_input_file(state.active, state.active);
     if (res.path) {
       $("module-input-path").value = res.path;
       applyOutputSuggestion(res.suggested_output);
