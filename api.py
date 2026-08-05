@@ -422,6 +422,28 @@ class Api:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "message": str(exc)}
 
+    def check_bulk_overwrites(self) -> dict[str, Any]:
+        """Which currently-ready modules already have a file sitting at their
+        output path, so the UI can confirm once before "Export all ready
+        modules" replaces them — the same protection export() already gives
+        a single module, batched into one check instead of one popup per
+        module."""
+        status = self.scan_status()
+        existing: list[dict[str, Any]] = []
+        for config in PROCESS_CONFIGS:
+            step_id = config.step_id
+            info = status.get(step_id)
+            if not info or info.get("status") != "ready":
+                continue
+            target_text = self.output_paths.get(step_id, "").strip()
+            if not target_text:
+                source = self._selected_input(step_id)
+                if source is not None:
+                    target_text = self._suggest_output(step_id, str(source))
+            if target_text and Path(target_text).is_file():
+                existing.append({"step_id": step_id, "name": config.name, "path": target_text})
+        return {"existing": existing}
+
     def export_all_ready(
         self, node: str, day_start: str, evening_start: str, night_start: str
     ) -> dict[str, Any]:

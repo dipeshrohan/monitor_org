@@ -544,8 +544,20 @@ async function runExport() {
 }
 
 function confirmOverwrite(path) {
+  return confirmOverwriteMessage(`"${basename(path)}" already exists and will be replaced. Continue?`);
+}
+
+function confirmBulkOverwrite(existing) {
+  const names = existing.map((e) => `${e.step_id} ${e.name} ("${basename(e.path)}")`).join(", ");
+  const plural = existing.length === 1 ? "file" : "files";
+  return confirmOverwriteMessage(
+    `${existing.length} ${plural} already exist and will be replaced: ${names}. Continue?`
+  );
+}
+
+function confirmOverwriteMessage(message) {
   return new Promise((resolve) => {
-    $("overwrite-message").textContent = `"${basename(path)}" already exists and will be replaced. Continue?`;
+    $("overwrite-message").textContent = message;
     $("overwrite-modal").classList.remove("hidden");
     $("overwrite-modal").classList.add("flex");
 
@@ -780,6 +792,12 @@ async function runExportAll() {
   if (!nodeOk || !shiftOk) {
     showToast("Fix the highlighted Node/shift fields before bulk export.", "error");
     return;
+  }
+
+  const overwriteCheck = await api().check_bulk_overwrites();
+  if (overwriteCheck.existing.length > 0) {
+    const confirmed = await confirmBulkOverwrite(overwriteCheck.existing);
+    if (!confirmed) return;
   }
 
   const btn = $("export-all-btn");
