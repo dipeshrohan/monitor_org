@@ -334,22 +334,14 @@ function applyStatusPill(pill, mod, info) {
 // Module selection
 // ---------------------------------------------------------------------
 
-// touch=true means the user deliberately chose to look at this module (a
-// sidebar click, or the bulk-results "Resolve..." action) — that's what
-// clears a needs-attention badge. touch=false is for automatic re-syncs of
-// the currently-open panel (e.g. after a bulk export that happened to
-// include the already-active module) that shouldn't count as the user
-// having revisited anything, or a just-set badge would vanish before they
-// ever saw it.
-async function selectModule(stepId, { touch = true } = {}) {
+// A needs-attention badge means "this module still needs a decision from
+// you" — it must stay visible until the underlying issue is actually
+// fixed (a successful preview/export, a new input, resolved duplicates),
+// not just clear because the module was opened. Opening it to look is not
+// the same as fixing it.
+async function selectModule(stepId) {
   state.active = stepId;
   highlightSidebar();
-  if (touch) {
-    // Opening a flagged module counts as "revisiting" it — the badge has
-    // done its job of getting the user's attention, so it clears here
-    // rather than waiting for the underlying issue to be fixed.
-    clearNeedsAttention(stepId);
-  }
   const mod = state.modules.find((m) => m.step_id === stepId);
   $("module-title").textContent = `${mod.step_id}  ${mod.name}`;
 
@@ -743,6 +735,9 @@ async function runPreview() {
   renderPreview(result);
   $("export-btn").disabled = false;
   $("redo-duplicates-btn").classList.toggle("hidden", !result.has_duplicate_selections);
+  // A preview that actually succeeds is real evidence this module is no
+  // longer in trouble, regardless of which path got it here.
+  clearNeedsAttention(state.active);
   const issuesSuffix = result.issue_count ? `; ${result.issue_count} validation issue(s)` : "";
   setStatus(`Preview ready: ${result.row_count} row(s)${issuesSuffix}.`);
 }
@@ -784,6 +779,7 @@ async function runExport() {
   setBusy($("export-btn"), false);
   $("export-btn").disabled = false;
   if (result.ok) {
+    clearNeedsAttention(state.active);
     if (typeof result.appended_count === "number") {
       setStatus(`Export complete: ${result.appended_count} new row(s) added (${result.total_count} total).`);
       showToast(
@@ -1112,9 +1108,10 @@ async function runExportAll() {
   renderBulkResults(result.results);
   updateSidebarStatus();
   if (result.results.some((r) => r.step_id === state.active)) {
-    // Refreshing the already-open panel's own fields, not a deliberate
-    // revisit — must not clear a badge the user hasn't seen yet.
-    await selectModule(state.active, { touch: false });
+    // Refresh the already-open panel's own fields with the bulk-export
+    // outcome (renderBulkResults already set/cleared its needs-attention
+    // badge above, based on whether it actually succeeded).
+    await selectModule(state.active);
   }
 }
 
