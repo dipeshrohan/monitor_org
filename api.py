@@ -243,6 +243,11 @@ class Api:
             else:
                 self.module_input_paths[scope] = ""
                 self.states[scope] = ModuleState()
+                # The stored output path (if any) was suggested from the
+                # input that's now gone — get_context() would otherwise keep
+                # returning it verbatim forever, since it only computes a
+                # fresh suggestion when none is stored yet.
+                self.output_paths[scope] = ""
             return {"ok": True}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "message": str(exc)}

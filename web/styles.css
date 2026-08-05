@@ -141,12 +141,10 @@ html, body {
 
 .hidden { display: none !important; }
 .flex { display: flex; }
-.flex-1 { flex: 1 1 0%; }
-.items-center { align-items: center; }
-.gap-3 { gap: 0.75rem; }
-.min-w-\[220px\] { min-width: 220px; }
 .text-muted { color: var(--muted-foreground); font-weight: 400; }
 .inline-icon { width: 14px; height: 14px; margin-right: 4px; vertical-align: -2px; }
+.header-group { display: flex; align-items: center; gap: 0.75rem; }
+.universal-input-field { flex: 1 1 0%; min-width: 220px; }
 
 /* ---- Shell / layout ---- */
 
@@ -273,6 +271,7 @@ html, body {
   transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 .module-btn:hover { background: var(--muted); }
+.module-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgb(37 99 235 / 0.25); }
 .module-btn.active {
   background: var(--accent-bg);
   border-color: var(--accent-border);
@@ -297,7 +296,10 @@ html, body {
 .status-pill-ready { background: var(--success-bg); color: var(--success-foreground); }
 .status-pill-warning { background: var(--warning-bg); color: var(--warning-foreground); }
 .status-pill-error { background: var(--destructive-bg); color: var(--destructive-foreground); }
-.status-pill-scanning { background: var(--muted); color: var(--muted-foreground); font-style: italic; }
+/* Distinct from .status-pill-muted on purpose — "still scanning" is
+   transient and about to change, "not applicable" is a settled fact, and
+   they shouldn't look identical while meaning very different things. */
+.status-pill-scanning { background: var(--accent-bg); color: var(--accent-foreground); font-style: italic; }
 
 /* ---- Content ---- */
 
@@ -305,7 +307,10 @@ html, body {
 
 .content-heading { margin-bottom: 1rem; }
 .content-title { margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--foreground); }
-.content-note { margin: 0.25rem 0 0; font-size: 0.85rem; min-height: 1.2em; color: var(--success-foreground); }
+/* Neutral metadata text ("Working module · Monitor work center: X"), not a
+   success/confirmation message — --success-foreground made it read as a
+   "this succeeded" indicator, which is misleading. */
+.content-note { margin: 0.25rem 0 0; font-size: 0.85rem; min-height: 1.2em; color: var(--muted-foreground); }
 
 .module-panel { display: none; flex: 1 1 0%; flex-direction: column; gap: 1.1rem; }
 .module-panel.flex { display: flex; }
@@ -561,6 +566,10 @@ html, body {
   color: var(--warning-foreground);
 }
 .empty-state-inline { border: none; background: transparent; color: var(--muted-foreground); padding: 3rem 1.5rem; }
+/* A missing/unbuilt feature isn't a warning about the user's data — reuses
+   the same boxed layout as .empty-state but without the amber "something's
+   wrong" color language. */
+.empty-state-neutral { border-color: var(--border); background: var(--muted); color: var(--muted-foreground); }
 .empty-state-icon {
   display: flex;
   align-items: center;
@@ -572,6 +581,7 @@ html, body {
   color: var(--warning);
 }
 .empty-state-inline .empty-state-icon { background: var(--muted); color: var(--muted-foreground); }
+.empty-state-neutral .empty-state-icon { background: var(--card); color: var(--muted-foreground); }
 .empty-state-icon svg { width: 22px; height: 22px; }
 .empty-state-text { margin: 0; font-size: 0.85rem; max-width: 32rem; }
 
@@ -606,6 +616,7 @@ html, body {
 .modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.5rem; border-top: 1px solid var(--border); }
 
 .duplicate-record { border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
+.duplicate-record-invalid { border-color: var(--destructive); background: var(--destructive-bg); }
 .duplicate-record-title { margin: 0 0 0.15rem; font-size: 0.88rem; font-weight: 600; color: var(--foreground); }
 .duplicate-record-subtitle { margin: 0 0 0.85rem; font-size: 0.78rem; color: var(--muted-foreground); }
 
@@ -628,6 +639,7 @@ html, body {
   transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 .candidate-card:hover { border-color: var(--accent-hover-border); background: var(--muted); }
+.candidate-card:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15); }
 .candidate-card.selected { border-color: var(--primary); background: var(--accent-bg); }
 .candidate-card-header {
   display: inline-block;
@@ -651,16 +663,35 @@ html, body {
   bottom: 1.5rem;
   right: 1.5rem;
   z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
   max-width: 24rem;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
   font-size: 0.83rem;
   box-shadow: var(--shadow-lg);
-  white-space: pre-line;
   background: var(--card);
   color: var(--foreground);
 }
+.toast-message { flex: 1 1 auto; min-width: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.toast-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.toast-close:hover { opacity: 1; background: rgba(0, 0, 0, 0.08); }
+.toast-close svg { width: 13px; height: 13px; }
 .toast-success { background: var(--success-bg); border-color: var(--success-border); color: var(--success-foreground); }
 .toast-error { background: var(--destructive-bg); border-color: var(--destructive-border); color: var(--destructive-foreground); }
 

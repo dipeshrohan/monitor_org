@@ -25,6 +25,7 @@ const state = {
 const api = () => window.pywebview.api;
 const $ = (id) => document.getElementById(id);
 const basename = (p) => (p || "").split(/[\\/]/).pop();
+const THEME_STORAGE_KEY = "process-monitor-theme";
 
 // Every window.pywebview.api.<method>() call below can, in principle, reject
 // — the JS-API bridge translates an unexpected Python-side exception into a
@@ -72,7 +73,7 @@ let initialized = false;
 
 function showBridgeError(message) {
   $("connection-badge").innerHTML =
-    '<span class="status-dot status-dot-red"></span><span>Connection failed</span>';
+    '<span class="status-dot status-dot-red" aria-hidden="true"></span><span>Connection failed</span>';
   const main = document.querySelector("main");
   if (main) {
     main.innerHTML = `<div class="bridge-error">${message}</div>`;
@@ -84,7 +85,7 @@ async function init() {
   initialized = true;
 
   $("connection-badge").innerHTML =
-    '<span class="status-dot status-dot-emerald"></span><span>Ready</span>';
+    '<span class="status-dot status-dot-emerald" aria-hidden="true"></span><span>Ready</span>';
 
   try {
     state.modules = await api().list_modules();
@@ -121,13 +122,45 @@ if (bridgeReady()) {
 }
 
 // Purely client-side — doesn't need the Python bridge, so it's wired
-// immediately rather than waiting for init().
+// immediately rather than waiting for init(). Toasts can appear even before
+// (or if) the bridge ever connects (see the unhandledrejection listener
+// above), so its dismiss button has to work unconditionally too.
 wireThemeToggle();
+$("toast-close").addEventListener("click", hideToast);
+
+// Escape closes whichever modal is currently open, via the exact same
+// button a mouse click would use — so it's guaranteed to run the same
+// cleanup/state logic (cancelling a pending duplicate selection, resolving
+// the overwrite-confirmation promise as "cancel", etc.) rather than a
+// second, separately-maintained code path that could drift out of sync.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!$("duplicate-modal").classList.contains("hidden")) {
+    $("duplicate-cancel").click();
+  } else if (!$("bulk-export-modal").classList.contains("hidden")) {
+    $("bulk-export-close").click();
+  } else if (!$("overwrite-modal").classList.contains("hidden")) {
+    $("overwrite-cancel").click();
+  }
+});
 
 function wireThemeToggle() {
   const toggle = $("theme-toggle");
   const iconDark = $("theme-icon-dark");
   const iconLight = $("theme-icon-light");
+
+  // Remember an explicit choice across restarts — without this, the toggle
+  // only ever affects the current session and silently reverts to the OS
+  // preference the next time the app opens.
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "dark" || stored === "light") {
+      document.documentElement.dataset.theme = stored;
+    }
+  } catch {
+    // Storage unavailable (e.g. restricted webview) — toggle still works
+    // for this session, it just won't persist.
+  }
 
   function isDarkActive() {
     const explicit = document.documentElement.dataset.theme;
@@ -143,7 +176,13 @@ function wireThemeToggle() {
   }
 
   toggle.addEventListener("click", () => {
-    document.documentElement.dataset.theme = isDarkActive() ? "light" : "dark";
+    const next = isDarkActive() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // Same as above — non-fatal if storage isn't available.
+    }
     syncIcon();
   });
 
@@ -166,6 +205,9 @@ function renderSidebar() {
     const label = document.createElement("span");
     label.className = "module-btn-label";
     label.textContent = `${mod.step_id}  ${mod.name}`;
+    // Falls back to the full name on hover if it's ever truncated by the
+    // ellipsis — the status pill next to it already gets this treatment.
+    label.title = `${mod.step_id}  ${mod.name}`;
     btn.appendChild(label);
 
     const pill = document.createElement("span");
@@ -361,6 +403,9 @@ function wireStaticHandlers() {
         applyOutputSuggestion(res.suggested_output);
         resetPreviewUI("Select the Monitor Excel export.");
         updateSidebarStatus();
+        // A badge from a previous failure refers to the file that's now
+        // gone — a fresh file deserves a fresh attempt, not a stale flag.
+        clearNeedsAttention(state.active);
       }
     } catch (err) {
       showToast(`Could not select the universal input file: ${errorMessage(err)}`, "error");
@@ -373,6 +418,7 @@ function wireStaticHandlers() {
       $("universal-input-path").value = "";
       resetPreviewUI("Select the Monitor Excel export.");
       updateSidebarStatus();
+      clearNeedsAttention(state.active);
     } catch (err) {
       showToast(`Could not clear the universal input: ${errorMessage(err)}`, "error");
     }
@@ -388,6 +434,9 @@ function wireStaticHandlers() {
         applyOutputSuggestion(res.suggested_output);
         resetPreviewUI("Select the Monitor Excel export.");
         updateSidebarStatus();
+        // Same reasoning as the universal-input case: a new file means the
+        // old failure no longer applies.
+        clearNeedsAttention(state.active);
       }
     } catch (err) {
       showToast(`Could not select the input file: ${errorMessage(err)}`, "error");
@@ -398,8 +447,13 @@ function wireStaticHandlers() {
     try {
       await api().clear_input(state.active);
       $("module-input-path").value = "";
+      // The backend already dropped the stored output suggestion (it was
+      // derived from the input that's now gone) — reflect that here too,
+      // instead of leaving a filename with nothing behind it.
+      $("output-path").value = "";
       resetPreviewUI("Select the Monitor Excel export.");
       updateSidebarStatus();
+      clearNeedsAttention(state.active);
     } catch (err) {
       showToast(`Could not clear the input: ${errorMessage(err)}`, "error");
     }
@@ -483,24 +537,32 @@ function wireStaticHandlers() {
     const selections = {};
     let allAnswered = true;
 
+    // Mirrors the Node/Shift-time pattern: don't just say "something's
+    // unanswered" in a toast, mark exactly which record/field it is so the
+    // user isn't left hunting for it themselves.
     records.forEach((box) => {
+      let boxAnswered = true;
       if (box.dataset.mode === "record") {
         const selectedCard = box.querySelector(".candidate-card.selected");
         if (!selectedCard) {
-          allAnswered = false;
-          return;
+          boxAnswered = false;
+        } else {
+          Object.assign(selections, JSON.parse(selectedCard.dataset.selections));
         }
-        Object.assign(selections, JSON.parse(selectedCard.dataset.selections));
       } else {
         const selects = Array.from(box.querySelectorAll("select"));
         selects.forEach((sel) => {
           if (!sel.value) {
-            allAnswered = false;
-            return;
+            boxAnswered = false;
+            sel.classList.add("input-invalid");
+          } else {
+            sel.classList.remove("input-invalid");
+            selections[sel.dataset.key] = parseInt(sel.value, 10);
           }
-          selections[sel.dataset.key] = parseInt(sel.value, 10);
         });
       }
+      box.classList.toggle("duplicate-record-invalid", !boxAnswered);
+      if (!boxAnswered) allAnswered = false;
     });
 
     if (!allAnswered) {
@@ -508,15 +570,24 @@ function wireStaticHandlers() {
       return;
     }
 
-    closeDuplicateModal();
+    // Don't close (and clear) the modal until the backend has actually
+    // confirmed the selections were saved — closing it destroys the
+    // candidate-card DOM state, so a failure here used to mean the user's
+    // just-made choices were simply gone, with no way to retry without
+    // redoing the whole resolution from scratch.
+    const applyBtn = $("duplicate-apply");
+    applyBtn.disabled = true;
     try {
       await api().submit_duplicate_selection(state.active, selections);
-      clearNeedsAttention(state.active);
     } catch (err) {
+      applyBtn.disabled = false;
       showToast(`Could not save your duplicate selections: ${errorMessage(err)}`, "error");
       $("preview-btn").disabled = false;
       return;
     }
+    applyBtn.disabled = false;
+    clearNeedsAttention(state.active);
+    closeDuplicateModal();
     setStatus("Applying selected duplicate measurements…");
     await runPreview();
   });
@@ -573,7 +644,9 @@ function validateShiftTimes() {
 function setBusy(btn, busy, busyLabel) {
   const spinner = btn.querySelector(".btn-spinner");
   const label = btn.querySelector(".btn-label");
+  const icon = btn.querySelector(".btn-icon");
   if (spinner) spinner.classList.toggle("hidden", !busy);
+  if (icon) icon.classList.toggle("hidden", busy);
   if (label) {
     if (busy) {
       if (!label.dataset.restore) label.dataset.restore = label.textContent;
@@ -624,6 +697,10 @@ async function runPreview() {
   }
 
   hideErrorBanner();
+  // A previous successful preview's issue count must not linger if this
+  // attempt fails — otherwise a stale "N validation issues" banner sits
+  // next to a brand-new, unrelated failure message.
+  renderIssues(0, []);
   $("preview-btn").disabled = true;
   $("export-btn").disabled = true;
   setBusy($("preview-btn"), true, "Loading…");
@@ -742,6 +819,10 @@ function confirmOverwriteMessage(message) {
     $("overwrite-message").textContent = message;
     $("overwrite-modal").classList.remove("hidden");
     $("overwrite-modal").classList.add("flex");
+    // Land keyboard focus on Cancel, the non-destructive option, so a
+    // stray Enter press right after the modal appears can't trigger
+    // Overwrite/Append by accident.
+    $("overwrite-cancel").focus();
 
     const confirmBtn = $("overwrite-confirm");
     const appendBtn = $("overwrite-append");
@@ -871,6 +952,7 @@ function openDuplicateModal(clusters) {
 
   $("duplicate-modal").classList.remove("hidden");
   $("duplicate-modal").classList.add("flex");
+  $("duplicate-cancel").focus();
 }
 
 // Whole record was entered twice (or more) as a block: every affected
@@ -912,6 +994,7 @@ function renderRecordCandidates(box, cluster) {
     card.addEventListener("click", () => {
       row.querySelectorAll(".candidate-card").forEach((el) => el.classList.remove("selected"));
       card.classList.add("selected");
+      box.classList.remove("duplicate-record-invalid");
     });
 
     row.appendChild(card);
@@ -952,6 +1035,15 @@ function renderFieldFallback(box, cluster) {
       select.appendChild(opt);
     });
 
+    select.addEventListener("change", () => {
+      if (select.value) {
+        select.classList.remove("input-invalid");
+        if (![...box.querySelectorAll("select")].some((s) => !s.value)) {
+          box.classList.remove("duplicate-record-invalid");
+        }
+      }
+    });
+
     fieldBox.appendChild(select);
     box.appendChild(fieldBox);
   });
@@ -968,9 +1060,9 @@ function closeDuplicateModal() {
 // ---------------------------------------------------------------------
 
 const CHECK_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>';
+  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>';
 const X_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>';
+  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>';
 
 async function runExportAll() {
   const nodeOk = validateNode();
@@ -998,6 +1090,7 @@ async function runExportAll() {
 
   const btn = $("export-all-btn");
   btn.disabled = true;
+  setBusy(btn, true, "Exporting…");
   let result;
   try {
     result = await api().export_all_ready(
@@ -1009,10 +1102,12 @@ async function runExportAll() {
     );
   } catch (err) {
     btn.disabled = false;
+    setBusy(btn, false);
     showToast(`Bulk export failed: ${errorMessage(err)}`, "error");
     return;
   }
   btn.disabled = false;
+  setBusy(btn, false);
 
   renderBulkResults(result.results);
   updateSidebarStatus();
@@ -1029,10 +1124,19 @@ function renderBulkResults(results) {
   container.innerHTML = "";
 
   if (results.length === 0) {
-    const p = document.createElement("p");
-    p.className = "text-muted";
-    p.textContent = "No modules currently have matching data to export.";
-    container.appendChild(p);
+    // Same icon + centered-text empty-state pattern used everywhere else
+    // in the app (#preview-empty, #not-implemented-panel), instead of a
+    // one-off plain paragraph.
+    const empty = document.createElement("div");
+    empty.className = "empty-state empty-state-inline";
+    empty.innerHTML =
+      '<span class="empty-state-icon">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/>' +
+      '<line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>' +
+      "</span>" +
+      '<p class="empty-state-text">No modules currently have matching data to export.</p>';
+    container.appendChild(empty);
   }
 
   results.forEach((r) => {
@@ -1094,6 +1198,7 @@ function renderBulkResults(results) {
 
   $("bulk-export-modal").classList.remove("hidden");
   $("bulk-export-modal").classList.add("flex");
+  $("bulk-export-close").focus();
 }
 
 // silent skips the summary toast — used when a row action (e.g. "Resolve
@@ -1127,10 +1232,14 @@ let toastTimer = null;
 
 function showToast(message, kind) {
   const el = $("toast");
-  el.textContent = message;
+  $("toast-message").textContent = message;
   el.className = `toast ${kind === "error" ? "toast-error" : "toast-success"}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add("hidden"), 6000);
+  // Errors get longer on screen — they're usually longer messages (a file
+  // path, a backend error) and more important not to miss than a routine
+  // success confirmation.
+  const duration = kind === "error" ? 9000 : 6000;
+  toastTimer = setTimeout(() => el.classList.add("hidden"), duration);
 }
 
 function hideToast() {

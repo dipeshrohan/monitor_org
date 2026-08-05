@@ -11,22 +11,22 @@
   <div class="app-shell">
     <!-- Title bar -->
     <header class="app-header">
-      <div class="flex items-center gap-3">
+      <div class="header-group">
         <span class="header-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/></svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/></svg>
         </span>
         <div>
           <h1 class="app-title">Process Monitor Data Organizer</h1>
           <p class="app-subtitle">Organize Monitor exports into per-process Excel reports</p>
         </div>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="header-group">
         <button id="theme-toggle" class="icon-btn" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">
-          <svg id="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-          <svg id="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/></svg>
+          <svg aria-hidden="true" id="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg aria-hidden="true" id="theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/></svg>
         </button>
         <div id="connection-badge" class="connection-badge">
-          <span class="status-dot status-dot-amber"></span>
+          <span class="status-dot status-dot-amber" aria-hidden="true"></span>
           <span>Connecting…</span>
         </div>
       </div>
@@ -35,48 +35,49 @@
     <!-- Universal input -->
     <section class="universal-bar">
       <span class="universal-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-1-8.9A5.5 5.5 0 0 1 16.7 8H17a4 4 0 0 1 1 7.9"/><path d="M12 12v8"/><path d="m9 15 3-3 3 3"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-1-8.9A5.5 5.5 0 0 1 16.7 8H17a4 4 0 0 1 1 7.9"/><path d="M12 12v8"/><path d="m9 15 3-3 3 3"/></svg>
       </span>
-      <span class="universal-label">Universal input <span class="text-muted">(all stations)</span></span>
-      <input id="universal-input-path" type="text" readonly placeholder="No file selected" class="input flex-1 min-w-[220px]" />
+      <label class="universal-label" for="universal-input-path">Universal input <span class="text-muted">(all stations)</span></label>
+      <input id="universal-input-path" type="text" readonly placeholder="No file selected" class="input universal-input-field" />
       <button id="universal-browse" class="btn btn-outline btn-icon-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2z"/><path d="M2.5 10h17l-2 8.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5z"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2z"/><path d="M2.5 10h17l-2 8.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5z"/></svg>
         Browse…
       </button>
       <button id="universal-clear" class="btn btn-ghost">Clear</button>
       <span class="universal-divider"></span>
       <button id="export-all-btn" class="btn btn-outline btn-icon-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Export all ready modules
+        <span class="btn-spinner hidden"></span>
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span class="btn-label">Export all ready modules</span>
       </button>
     </section>
 
     <!-- Global settings — apply to every module, not just the one showing -->
     <section class="universal-bar">
       <span class="universal-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="17" x2="17" y2="17"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="17" x2="17" y2="17"/></svg>
       </span>
-      <span class="universal-label">Node <span class="text-muted">(all modules)</span></span>
+      <label class="universal-label" for="node-input">Node <span class="text-muted">(all modules)</span></label>
       <div>
         <input id="node-input" type="text" placeholder="e.g. 4" class="input form-input-narrow" value="1" />
         <p id="node-error" class="field-error hidden"></p>
       </div>
       <span class="universal-divider"></span>
       <span class="universal-label">
-        <svg class="inline-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <svg class="inline-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
         Shift starts (HH:MM) <span class="text-muted">(all modules)</span>
       </span>
       <div>
         <div class="shift-row">
-          <span class="shift-field">DAY
+          <label class="shift-field" for="day-start">DAY
             <input id="day-start" type="text" placeholder="07:00" class="input shift-input" value="07:00" />
-          </span>
-          <span class="shift-field">EVENING
+          </label>
+          <label class="shift-field" for="evening-start">EVENING
             <input id="evening-start" type="text" placeholder="15:00" class="input shift-input" value="15:00" />
-          </span>
-          <span class="shift-field">NIGHT
+          </label>
+          <label class="shift-field" for="night-start">NIGHT
             <input id="night-start" type="text" placeholder="23:00" class="input shift-input" value="23:00" />
-          </span>
+          </label>
         </div>
         <p id="shift-error" class="field-error hidden"></p>
       </div>
@@ -87,7 +88,7 @@
       <!-- Sidebar -->
       <aside class="sidebar">
         <h2 class="sidebar-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
           Process modules
         </h2>
         <nav id="module-list" class="module-list"></nav>
@@ -101,9 +102,9 @@
         </div>
 
         <!-- Not implemented notice -->
-        <div id="not-implemented-panel" class="empty-state hidden">
-          <span class="empty-state-icon empty-state-icon-warning">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 3h6l2-3h4"/><path d="M5.5 5h13l2.5 7v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7z"/></svg>
+        <div id="not-implemented-panel" class="empty-state empty-state-neutral hidden">
+          <span class="empty-state-icon">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 3h6l2-3h4"/><path d="M5.5 5h13l2.5 7v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7z"/></svg>
           </span>
           <p id="not-implemented-message" class="empty-state-text"></p>
         </div>
@@ -113,24 +114,24 @@
           <section class="card">
             <div class="card-header">
               <span class="card-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="17" x2="17" y2="17"/></svg>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="17" x2="17" y2="17"/></svg>
               </span>
               <h3 class="card-title">Station input and output</h3>
             </div>
             <div class="card-content">
               <div class="form-grid">
-                <label class="form-label" id="station-input-label">Individual input file</label>
+                <label class="form-label" id="station-input-label" for="module-input-path">Individual input file</label>
                 <input id="module-input-path" type="text" readonly placeholder="No file selected" class="input" />
                 <button id="module-browse" class="btn btn-outline btn-icon-label">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2z"/><path d="M2.5 10h17l-2 8.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5z"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2z"/><path d="M2.5 10h17l-2 8.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5z"/></svg>
                   Browse…
                 </button>
                 <button id="module-clear" class="btn btn-ghost">Clear</button>
 
-                <label class="form-label">Output Excel file</label>
+                <label class="form-label" for="output-path">Output Excel file</label>
                 <input id="output-path" type="text" readonly placeholder="Choose where to save the result" class="input" />
                 <button id="output-browse" class="btn btn-outline btn-icon-label">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2z"/><path d="M2.5 10h17l-2 8.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5z"/></svg>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H5a2 2 0 0 0-2 2z"/><path d="M2.5 10h17l-2 8.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5z"/></svg>
                   Browse…
                 </button>
               </div>
@@ -147,21 +148,21 @@
               <span class="btn-label">2. Export organized Excel</span>
             </button>
             <button id="redo-duplicates-btn" class="btn btn-ghost hidden">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
               Change duplicate selections
             </button>
-            <span id="status-text" class="status-text">Select the Monitor Excel export.</span>
+            <span id="status-text" class="status-text" aria-live="polite">Select the Monitor Excel export.</span>
           </section>
 
-          <section id="issues-banner" class="issues-banner hidden">
+          <section id="issues-banner" class="issues-banner hidden" aria-live="polite">
             <button id="issues-toggle" class="issues-summary" type="button">
               <span id="issues-summary-text"></span>
-              <svg class="issues-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <svg class="issues-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             <ul id="issues-list" class="issues-list hidden"></ul>
           </section>
 
-          <section id="error-banner" class="error-banner hidden">
+          <section id="error-banner" class="error-banner hidden" role="alert" aria-live="assertive">
             <p id="error-message" class="error-message"></p>
             <button id="error-detail-toggle" class="error-detail-toggle hidden" type="button">Show technical details</button>
             <pre id="error-detail" class="error-detail hidden"></pre>
@@ -170,7 +171,7 @@
           <section class="card card-fill">
             <div class="card-header">
               <span class="card-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/></svg>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/></svg>
               </span>
               <h3 id="preview-title" class="card-title">Output preview</h3>
             </div>
@@ -182,7 +183,7 @@
                 </table>
                 <div id="preview-empty" class="empty-state empty-state-inline">
                   <span class="empty-state-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
                   </span>
                   <p class="empty-state-text">No data loaded yet. Click "Load and preview".</p>
                 </div>
@@ -232,14 +233,23 @@
       </div>
       <div class="modal-footer">
         <button id="overwrite-cancel" class="btn btn-ghost">Cancel</button>
-        <button id="overwrite-append" class="btn btn-outline">Append new rows</button>
-        <button id="overwrite-confirm" class="btn btn-default">Overwrite</button>
+        <!-- Overwrite is the destructive choice (replaces the file outright),
+             so it gets the plain outline treatment; Append — the safer,
+             non-destructive option — gets the strong default/primary style
+             instead of the other way around. -->
+        <button id="overwrite-confirm" class="btn btn-outline">Overwrite</button>
+        <button id="overwrite-append" class="btn btn-default">Append new rows</button>
       </div>
     </div>
   </div>
 
   <!-- Toast -->
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true">
+    <span id="toast-message" class="toast-message"></span>
+    <button id="toast-close" class="toast-close" type="button" aria-label="Dismiss">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
 
   <script src="app.js"></script>
 </body>
