@@ -515,9 +515,17 @@ class Api:
                 if not preview["ok"]:
                     if preview.get("error") == "duplicates":
                         message = "Has duplicate measurements that need manual resolution — open this module to resolve them."
+                        # Distinguishes "needs manual duplicate resolution" from
+                        # any other failure so the UI can offer a one-click
+                        # jump straight into that flow instead of just a
+                        # static error message.
+                        results.append({
+                            "step_id": step_id, "name": config.name, "ok": False,
+                            "message": message, "reason": "duplicates",
+                        })
                     else:
                         message = preview.get("message", "Could not organize this module.")
-                    results.append({"step_id": step_id, "name": config.name, "ok": False, "message": message})
+                        results.append({"step_id": step_id, "name": config.name, "ok": False, "message": message})
                     continue
 
                 if not self.output_paths.get(step_id, "").strip():

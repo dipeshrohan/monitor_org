@@ -528,6 +528,8 @@ html, body {
 .bulk-result-name { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--foreground); }
 .bulk-result-detail { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--muted-foreground); word-break: break-word; }
 .bulk-result.fail .bulk-result-detail { color: var(--destructive-foreground); }
+.bulk-result > div { flex: 1 1 auto; min-width: 0; }
+.bulk-result-action { flex-shrink: 0; align-self: center; white-space: nowrap; }
 
 /* ---- Preview table ---- */
 

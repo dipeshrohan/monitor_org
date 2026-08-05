@@ -13,6 +13,13 @@ const state = {
   eveningStart: "15:00",
   nightStart: "23:00",
   scanStatus: {},
+  // Modules that failed the last time they were attempted (bulk export, or
+  // duplicate resolution cancelled) and haven't been revisited since —
+  // step_id -> {type: "duplicates" | "error", message}. Drives a persistent
+  // sidebar badge so a failure is never silently forgotten once a modal
+  // closes; cleared the moment the user opens that module again.
+  needsAttention: new Map(),
+  lastBulkResults: [],
 };
 
 const api = () => window.pywebview.api;
@@ -222,11 +229,42 @@ async function updateSidebarStatus() {
   }
 }
 
+// Looks up the sidebar pill + module definition for a step and re-applies
+// its status, picking up the current state.needsAttention flag without
+// waiting for a full updateSidebarStatus() rescan — used to make a badge
+// appear/disappear immediately after a bulk export result or a duplicate
+// resolution, not just on the next scan pass.
+function refreshSidebarPill(stepId) {
+  const pill = document.querySelector(`.status-pill[data-step-id="${stepId}"]`);
+  const mod = state.modules.find((m) => m.step_id === stepId);
+  if (pill && mod) applyStatusPill(pill, mod, state.scanStatus[stepId] || null);
+}
+
+function setNeedsAttention(stepId, info) {
+  state.needsAttention.set(stepId, info);
+  refreshSidebarPill(stepId);
+}
+
+function clearNeedsAttention(stepId) {
+  if (state.needsAttention.delete(stepId)) refreshSidebarPill(stepId);
+}
+
 function applyStatusPill(pill, mod, info) {
   if (!mod.implemented) {
     pill.textContent = "Not defined";
     pill.className = "status-pill status-pill-muted";
     pill.title = "Output format not defined for this station yet.";
+    return;
+  }
+  // A module that failed the last time it was attempted (bulk export, or a
+  // cancelled duplicate resolution) stays flagged until the user actually
+  // opens it again, regardless of what a fresh row-count scan would
+  // otherwise show — the scan can't see "this needs a decision from you."
+  const attention = state.needsAttention.get(mod.step_id);
+  if (attention) {
+    pill.textContent = attention.type === "duplicates" ? "Needs review" : "Export failed";
+    pill.className = "status-pill status-pill-error";
+    pill.title = attention.message || "";
     return;
   }
   if (!info || info.status === "no_input") {
@@ -254,9 +292,22 @@ function applyStatusPill(pill, mod, info) {
 // Module selection
 // ---------------------------------------------------------------------
 
-async function selectModule(stepId) {
+// touch=true means the user deliberately chose to look at this module (a
+// sidebar click, or the bulk-results "Resolve..." action) — that's what
+// clears a needs-attention badge. touch=false is for automatic re-syncs of
+// the currently-open panel (e.g. after a bulk export that happened to
+// include the already-active module) that shouldn't count as the user
+// having revisited anything, or a just-set badge would vanish before they
+// ever saw it.
+async function selectModule(stepId, { touch = true } = {}) {
   state.active = stepId;
   highlightSidebar();
+  if (touch) {
+    // Opening a flagged module counts as "revisiting" it — the badge has
+    // done its job of getting the user's attention, so it clears here
+    // rather than waiting for the underlying issue to be fixed.
+    clearNeedsAttention(stepId);
+  }
   const mod = state.modules.find((m) => m.step_id === stepId);
   $("module-title").textContent = `${mod.step_id}  ${mod.name}`;
 
@@ -406,7 +457,7 @@ function wireStaticHandlers() {
   });
 
   $("export-all-btn").addEventListener("click", runExportAll);
-  $("bulk-export-close").addEventListener("click", closeBulkExportModal);
+  $("bulk-export-close").addEventListener("click", () => closeBulkExportModal());
 
   $("duplicate-cancel").addEventListener("click", async () => {
     closeDuplicateModal();
@@ -418,6 +469,13 @@ function wireStaticHandlers() {
       setStatus("Duplicate selection cancelled (with a backend error).");
     }
     $("preview-btn").disabled = false;
+    // Leaving this unresolved is a real pending state, not a dead end —
+    // flag it the same way a bulk-export duplicate failure would be, so
+    // it isn't forgotten the moment the user clicks elsewhere.
+    setNeedsAttention(state.active, {
+      type: "duplicates",
+      message: "Duplicate measurements need to be resolved before export.",
+    });
   });
 
   $("duplicate-apply").addEventListener("click", async () => {
@@ -453,6 +511,7 @@ function wireStaticHandlers() {
     closeDuplicateModal();
     try {
       await api().submit_duplicate_selection(state.active, selections);
+      clearNeedsAttention(state.active);
     } catch (err) {
       showToast(`Could not save your duplicate selections: ${errorMessage(err)}`, "error");
       $("preview-btn").disabled = false;
@@ -958,11 +1017,14 @@ async function runExportAll() {
   renderBulkResults(result.results);
   updateSidebarStatus();
   if (result.results.some((r) => r.step_id === state.active)) {
-    await selectModule(state.active);
+    // Refreshing the already-open panel's own fields, not a deliberate
+    // revisit — must not clear a badge the user hasn't seen yet.
+    await selectModule(state.active, { touch: false });
   }
 }
 
 function renderBulkResults(results) {
+  state.lastBulkResults = results;
   const container = $("bulk-export-results");
   container.innerHTML = "";
 
@@ -974,6 +1036,19 @@ function renderBulkResults(results) {
   }
 
   results.forEach((r) => {
+    // A module that just succeeded shouldn't keep a stale badge from an
+    // earlier attempt; a module that just failed gets flagged immediately —
+    // visible in the sidebar even before this modal is closed, and still
+    // visible after, which is the whole point.
+    if (r.ok) {
+      clearNeedsAttention(r.step_id);
+    } else {
+      setNeedsAttention(r.step_id, {
+        type: r.reason === "duplicates" ? "duplicates" : "error",
+        message: r.message,
+      });
+    }
+
     const row = document.createElement("div");
     row.className = `bulk-result ${r.ok ? "ok" : "fail"}`;
 
@@ -996,8 +1071,24 @@ function renderBulkResults(results) {
       detail.textContent = r.ok ? r.path : r.message;
     }
     text.appendChild(detail);
-
     row.appendChild(text);
+
+    if (!r.ok) {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "btn btn-outline bulk-result-action";
+      action.textContent = r.reason === "duplicates" ? "Resolve duplicates →" : "Open module →";
+      action.addEventListener("click", async () => {
+        closeBulkExportModal(true);
+        // Guarantees a stale "still needs attention" toast from an earlier
+        // Close can't linger on screen while this new resolution flow opens.
+        hideToast();
+        await selectModule(r.step_id);
+        await runPreview();
+      });
+      row.appendChild(action);
+    }
+
     container.appendChild(row);
   });
 
@@ -1005,9 +1096,27 @@ function renderBulkResults(results) {
   $("bulk-export-modal").classList.add("flex");
 }
 
-function closeBulkExportModal() {
+// silent skips the summary toast — used when a row action (e.g. "Resolve
+// duplicates") closes this modal on its way to actually fixing something;
+// telling the user "still needs attention" in the same instant they've
+// chosen to go resolve it is confusing, not guiding.
+function closeBulkExportModal(silent = false) {
   $("bulk-export-modal").classList.add("hidden");
   $("bulk-export-modal").classList.remove("flex");
+  if (silent) return;
+
+  // Closing shouldn't be a dead end: say what's actually left, since the
+  // sidebar badges alone are easy to miss right after a modal closes.
+  if (state.lastBulkResults.length === 0) return;
+  if (state.needsAttention.size > 0) {
+    const n = state.needsAttention.size;
+    showToast(
+      `${n} module${n === 1 ? "" : "s"} still need${n === 1 ? "s" : ""} attention — look for the flagged badge in the sidebar.`,
+      "error"
+    );
+  } else {
+    showToast("All ready modules exported successfully.", "success");
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -1022,4 +1131,9 @@ function showToast(message, kind) {
   el.className = `toast ${kind === "error" ? "toast-error" : "toast-success"}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add("hidden"), 6000);
+}
+
+function hideToast() {
+  clearTimeout(toastTimer);
+  $("toast").classList.add("hidden");
 }
