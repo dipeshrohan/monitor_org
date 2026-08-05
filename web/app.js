@@ -19,6 +19,38 @@ const api = () => window.pywebview.api;
 const $ = (id) => document.getElementById(id);
 const basename = (p) => (p || "").split(/[\\/]/).pop();
 
+// Every window.pywebview.api.<method>() call below can, in principle, reject
+// — the JS-API bridge translates an unexpected Python-side exception into a
+// rejected promise. Most backend methods already catch their own errors and
+// return {ok: false, message: ...}-style results, but this is the last line
+// of defense against anything that slips through (or a bridge-level failure
+// itself, e.g. the native window vanishing mid-call). Extracting a readable
+// message from whatever shape the rejection takes keeps every catch site
+// below from needing its own guesswork.
+function errorMessage(err) {
+  if (!err) return "An unknown error occurred.";
+  if (typeof err === "string") return err;
+  if (err.message) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+// Last-resort safety net: if something still throws or rejects without ever
+// reaching a local try/catch (a bug in this file, not just a backend call),
+// surface it as a toast instead of leaving the UI stuck silently — the
+// failure mode this app has hit before (a spinner or disabled button that
+// never recovers because the code that would re-enable it never ran).
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("Unhandled promise rejection:", event.reason);
+  showToast(`Unexpected error: ${errorMessage(event.reason)}`, "error");
+});
+window.addEventListener("error", (event) => {
+  console.error("Unhandled error:", event.error || event.message);
+});
+
 // pywebview can inject window.pywebview and fire "pywebviewready" before this
 // script has run and attached its listener (a known race condition) — so check
 // for an already-ready bridge first, and only fall back to the event if it's
@@ -228,7 +260,16 @@ async function selectModule(stepId) {
   const mod = state.modules.find((m) => m.step_id === stepId);
   $("module-title").textContent = `${mod.step_id}  ${mod.name}`;
 
-  const ctx = await api().get_context(stepId);
+  let ctx;
+  try {
+    ctx = await api().get_context(stepId);
+  } catch (err) {
+    showToast(`Could not load ${mod.name}: ${errorMessage(err)}`, "error");
+    ctx = { universal_input: "", module_input: "", output_path: "", has_preview: false };
+  }
+  if (ctx.error) {
+    showToast(`Could not fully load ${mod.name}: ${ctx.error}`, "error");
+  }
   $("universal-input-path").value = ctx.universal_input || "";
 
   if (mod.implemented) {
@@ -260,44 +301,72 @@ async function selectModule(stepId) {
 
 function wireStaticHandlers() {
   $("universal-browse").addEventListener("click", async () => {
-    const res = await api().pick_input_file("universal", state.active);
-    if (res.path) {
-      $("universal-input-path").value = res.path;
-      applyOutputSuggestion(res.suggested_output);
-      resetPreviewUI("Select the Monitor Excel export.");
-      updateSidebarStatus();
+    try {
+      const res = await api().pick_input_file("universal", state.active);
+      if (res.error) {
+        showToast(`Could not open the file picker: ${res.error}`, "error");
+      } else if (res.path) {
+        $("universal-input-path").value = res.path;
+        applyOutputSuggestion(res.suggested_output);
+        resetPreviewUI("Select the Monitor Excel export.");
+        updateSidebarStatus();
+      }
+    } catch (err) {
+      showToast(`Could not select the universal input file: ${errorMessage(err)}`, "error");
     }
   });
 
   $("universal-clear").addEventListener("click", async () => {
-    await api().clear_input("universal");
-    $("universal-input-path").value = "";
-    resetPreviewUI("Select the Monitor Excel export.");
-    updateSidebarStatus();
+    try {
+      await api().clear_input("universal");
+      $("universal-input-path").value = "";
+      resetPreviewUI("Select the Monitor Excel export.");
+      updateSidebarStatus();
+    } catch (err) {
+      showToast(`Could not clear the universal input: ${errorMessage(err)}`, "error");
+    }
   });
 
   $("module-browse").addEventListener("click", async () => {
-    const res = await api().pick_input_file(state.active, state.active);
-    if (res.path) {
-      $("module-input-path").value = res.path;
-      applyOutputSuggestion(res.suggested_output);
-      resetPreviewUI("Select the Monitor Excel export.");
-      updateSidebarStatus();
+    try {
+      const res = await api().pick_input_file(state.active, state.active);
+      if (res.error) {
+        showToast(`Could not open the file picker: ${res.error}`, "error");
+      } else if (res.path) {
+        $("module-input-path").value = res.path;
+        applyOutputSuggestion(res.suggested_output);
+        resetPreviewUI("Select the Monitor Excel export.");
+        updateSidebarStatus();
+      }
+    } catch (err) {
+      showToast(`Could not select the input file: ${errorMessage(err)}`, "error");
     }
   });
 
   $("module-clear").addEventListener("click", async () => {
-    await api().clear_input(state.active);
-    $("module-input-path").value = "";
-    resetPreviewUI("Select the Monitor Excel export.");
-    updateSidebarStatus();
+    try {
+      await api().clear_input(state.active);
+      $("module-input-path").value = "";
+      resetPreviewUI("Select the Monitor Excel export.");
+      updateSidebarStatus();
+    } catch (err) {
+      showToast(`Could not clear the input: ${errorMessage(err)}`, "error");
+    }
   });
 
   $("output-browse").addEventListener("click", async () => {
-    const current = $("output-path").value.trim();
-    const defaultName = current ? basename(current) : "organized.xlsx";
-    const res = await api().pick_output_file(state.active, defaultName);
-    if (res.path) $("output-path").value = res.path;
+    try {
+      const current = $("output-path").value.trim();
+      const defaultName = current ? basename(current) : "organized.xlsx";
+      const res = await api().pick_output_file(state.active, defaultName);
+      if (res.error) {
+        showToast(`Could not open the file picker: ${res.error}`, "error");
+      } else if (res.path) {
+        $("output-path").value = res.path;
+      }
+    } catch (err) {
+      showToast(`Could not select the output file: ${errorMessage(err)}`, "error");
+    }
   });
 
   $("node-input").addEventListener("input", (e) => (state.node = e.target.value));
@@ -314,7 +383,12 @@ function wireStaticHandlers() {
   $("export-btn").addEventListener("click", runExport);
 
   $("redo-duplicates-btn").addEventListener("click", async () => {
-    await api().clear_duplicate_selections(state.active);
+    try {
+      await api().clear_duplicate_selections(state.active);
+    } catch (err) {
+      showToast(`Could not clear the previous duplicate selections: ${errorMessage(err)}`, "error");
+      return;
+    }
     await runPreview();
   });
 
@@ -336,8 +410,13 @@ function wireStaticHandlers() {
 
   $("duplicate-cancel").addEventListener("click", async () => {
     closeDuplicateModal();
-    await api().cancel_duplicate_selection(state.active);
-    setStatus("Duplicate selection cancelled.");
+    try {
+      await api().cancel_duplicate_selection(state.active);
+      setStatus("Duplicate selection cancelled.");
+    } catch (err) {
+      showToast(`Could not cancel cleanly: ${errorMessage(err)}`, "error");
+      setStatus("Duplicate selection cancelled (with a backend error).");
+    }
     $("preview-btn").disabled = false;
   });
 
@@ -372,7 +451,13 @@ function wireStaticHandlers() {
     }
 
     closeDuplicateModal();
-    await api().submit_duplicate_selection(state.active, selections);
+    try {
+      await api().submit_duplicate_selection(state.active, selections);
+    } catch (err) {
+      showToast(`Could not save your duplicate selections: ${errorMessage(err)}`, "error");
+      $("preview-btn").disabled = false;
+      return;
+    }
     setStatus("Applying selected duplicate measurements…");
     await runPreview();
   });
@@ -485,13 +570,22 @@ async function runPreview() {
   setBusy($("preview-btn"), true, "Loading…");
   setStatus("Reading input…");
 
-  const result = await api().load_preview(
-    state.active,
-    state.node,
-    state.dayStart,
-    state.eveningStart,
-    state.nightStart
-  );
+  let result;
+  try {
+    result = await api().load_preview(
+      state.active,
+      state.node,
+      state.dayStart,
+      state.eveningStart,
+      state.nightStart
+    );
+  } catch (err) {
+    setBusy($("preview-btn"), false);
+    $("preview-btn").disabled = false;
+    setStatus("Could not organize the selected file.");
+    showErrorBanner(`Could not reach the Python backend: ${errorMessage(err)}`);
+    return;
+  }
 
   setBusy($("preview-btn"), false);
   $("preview-btn").disabled = false;
@@ -525,15 +619,32 @@ async function runExport() {
   }
 
   let mode = "overwrite";
-  const existsCheck = await api().check_output_exists(state.active);
-  if (existsCheck.exists) {
-    mode = await confirmOverwrite(existsCheck.path);
-    if (mode === "cancel") return;
+  try {
+    const existsCheck = await api().check_output_exists(state.active);
+    if (existsCheck.error) {
+      showToast(`Could not check the output file: ${existsCheck.error}`, "error");
+      return;
+    }
+    if (existsCheck.exists) {
+      mode = await confirmOverwrite(existsCheck.path);
+      if (mode === "cancel") return;
+    }
+  } catch (err) {
+    showToast(`Could not check the output file: ${errorMessage(err)}`, "error");
+    return;
   }
 
   setBusy($("export-btn"), true, "Exporting…");
   $("export-btn").disabled = true;
-  const result = await api().export(state.active, mode);
+  let result;
+  try {
+    result = await api().export(state.active, mode);
+  } catch (err) {
+    setBusy($("export-btn"), false);
+    $("export-btn").disabled = false;
+    showToast(`Export failed: ${errorMessage(err)}`, "error");
+    return;
+  }
   setBusy($("export-btn"), false);
   $("export-btn").disabled = false;
   if (result.ok) {
@@ -811,21 +922,37 @@ async function runExportAll() {
   }
 
   let mode = "overwrite";
-  const overwriteCheck = await api().check_bulk_overwrites();
-  if (overwriteCheck.existing.length > 0) {
-    mode = await confirmBulkOverwrite(overwriteCheck.existing);
-    if (mode === "cancel") return;
+  try {
+    const overwriteCheck = await api().check_bulk_overwrites();
+    if (overwriteCheck.error) {
+      showToast(`Could not check for existing files: ${overwriteCheck.error}`, "error");
+      return;
+    }
+    if (overwriteCheck.existing.length > 0) {
+      mode = await confirmBulkOverwrite(overwriteCheck.existing);
+      if (mode === "cancel") return;
+    }
+  } catch (err) {
+    showToast(`Could not check for existing files: ${errorMessage(err)}`, "error");
+    return;
   }
 
   const btn = $("export-all-btn");
   btn.disabled = true;
-  const result = await api().export_all_ready(
-    state.node,
-    state.dayStart,
-    state.eveningStart,
-    state.nightStart,
-    mode
-  );
+  let result;
+  try {
+    result = await api().export_all_ready(
+      state.node,
+      state.dayStart,
+      state.eveningStart,
+      state.nightStart,
+      mode
+    );
+  } catch (err) {
+    btn.disabled = false;
+    showToast(`Bulk export failed: ${errorMessage(err)}`, "error");
+    return;
+  }
   btn.disabled = false;
 
   renderBulkResults(result.results);

@@ -174,22 +174,33 @@ class Api:
         ]
 
     def get_context(self, step_id: str) -> dict[str, Any]:
-        state = self.states[step_id]
-        output_path = self.output_paths.get(step_id, "")
-        if not output_path:
-            # No output chosen yet for this module. If an input is already
-            # available (module-specific or universal), show a live
-            # suggestion so switching to a module doesn't leave the output
-            # box blank when there's actually something to organize.
-            source = self._selected_input(step_id)
-            if source is not None:
-                output_path = self._suggest_output(step_id, str(source))
-        return {
-            "universal_input": self.universal_input_path,
-            "module_input": self.module_input_paths.get(step_id, ""),
-            "output_path": output_path,
-            "has_preview": state.data is not None,
-        }
+        try:
+            state = self.states[step_id]
+            output_path = self.output_paths.get(step_id, "")
+            if not output_path:
+                # No output chosen yet for this module. If an input is already
+                # available (module-specific or universal), show a live
+                # suggestion so switching to a module doesn't leave the output
+                # box blank when there's actually something to organize.
+                source = self._selected_input(step_id)
+                if source is not None:
+                    output_path = self._suggest_output(step_id, str(source))
+            return {
+                "universal_input": self.universal_input_path,
+                "module_input": self.module_input_paths.get(step_id, ""),
+                "output_path": output_path,
+                "has_preview": state.data is not None,
+            }
+        except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
+            # Safe fallback values so a switched-to module still renders with
+            # blank fields instead of the whole panel breaking.
+            return {
+                "universal_input": self.universal_input_path,
+                "module_input": "",
+                "output_path": "",
+                "has_preview": False,
+                "error": str(exc),
+            }
 
     # ------------------------------------------------------------------
     # File dialogs
@@ -203,56 +214,68 @@ class Api:
         """scope is either 'universal' or a process step_id; active_step_id is
         whichever module panel is currently showing in the UI, used to name
         the suggested output file correctly even when scope is 'universal'."""
-        result = self._window.create_file_dialog(
-            webview.OPEN_DIALOG, directory=self._last_directory, file_types=OPEN_FILE_TYPES
-        )
-        path = self._first_path(result)
-        if not path:
-            return {"path": None}
-        self._last_directory = str(Path(path).parent)
-        if scope == "universal":
-            self.universal_input_path = path
-        else:
-            self.module_input_paths[scope] = path
-            self.states[scope] = ModuleState()
-        # Persist the suggestion immediately, not just display it: otherwise
-        # the output box can show a filename that Export never actually sees,
-        # since only pick_output_file() used to write to self.output_paths.
-        suggested = self._suggest_output(active_step_id, path)
-        self.output_paths[active_step_id] = suggested
-        return {"path": path, "suggested_output": suggested}
+        try:
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG, directory=self._last_directory, file_types=OPEN_FILE_TYPES
+            )
+            path = self._first_path(result)
+            if not path:
+                return {"path": None}
+            self._last_directory = str(Path(path).parent)
+            if scope == "universal":
+                self.universal_input_path = path
+            else:
+                self.module_input_paths[scope] = path
+                self.states[scope] = ModuleState()
+            # Persist the suggestion immediately, not just display it: otherwise
+            # the output box can show a filename that Export never actually sees,
+            # since only pick_output_file() used to write to self.output_paths.
+            suggested = self._suggest_output(active_step_id, path)
+            self.output_paths[active_step_id] = suggested
+            return {"path": path, "suggested_output": suggested}
+        except Exception as exc:  # noqa: BLE001 - a native dialog failure shouldn't crash the bridge
+            return {"path": None, "error": str(exc)}
 
     def clear_input(self, scope: str) -> dict[str, Any]:
-        if scope == "universal":
-            self.universal_input_path = ""
-        else:
-            self.module_input_paths[scope] = ""
-            self.states[scope] = ModuleState()
-        return {"ok": True}
+        try:
+            if scope == "universal":
+                self.universal_input_path = ""
+            else:
+                self.module_input_paths[scope] = ""
+                self.states[scope] = ModuleState()
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "message": str(exc)}
 
     def pick_output_file(self, step_id: str, default_name: str = "") -> dict[str, Any]:
-        result = self._window.create_file_dialog(
-            webview.SAVE_DIALOG,
-            directory=self._last_directory,
-            save_filename=default_name or "organized.xlsx",
-            file_types=SAVE_FILE_TYPES,
-        )
-        path = self._first_path(result)
-        if not path:
-            return {"path": None}
-        if not path.lower().endswith(".xlsx"):
-            path += ".xlsx"
-        self._last_directory = str(Path(path).parent)
-        self.output_paths[step_id] = path
-        return {"path": path}
+        try:
+            result = self._window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                directory=self._last_directory,
+                save_filename=default_name or "organized.xlsx",
+                file_types=SAVE_FILE_TYPES,
+            )
+            path = self._first_path(result)
+            if not path:
+                return {"path": None}
+            if not path.lower().endswith(".xlsx"):
+                path += ".xlsx"
+            self._last_directory = str(Path(path).parent)
+            self.output_paths[step_id] = path
+            return {"path": path}
+        except Exception as exc:  # noqa: BLE001 - a native dialog failure shouldn't crash the bridge
+            return {"path": None, "error": str(exc)}
 
     def check_output_exists(self, step_id: str) -> dict[str, Any]:
         """Whether the module's currently chosen output path already exists on
         disk, so the UI can confirm before Export silently overwrites it."""
-        target_text = self.output_paths.get(step_id, "").strip()
-        if not target_text:
-            return {"exists": False, "path": ""}
-        return {"exists": Path(target_text).is_file(), "path": target_text}
+        try:
+            target_text = self.output_paths.get(step_id, "").strip()
+            if not target_text:
+                return {"exists": False, "path": ""}
+            return {"exists": Path(target_text).is_file(), "path": target_text}
+        except Exception as exc:  # noqa: BLE001
+            return {"exists": False, "path": "", "error": str(exc)}
 
     @staticmethod
     def _first_path(result: Any) -> str | None:
@@ -448,21 +471,24 @@ class Api:
         modules" replaces them — the same protection export() already gives
         a single module, batched into one check instead of one popup per
         module."""
-        status = self.scan_status()
-        existing: list[dict[str, Any]] = []
-        for config in PROCESS_CONFIGS:
-            step_id = config.step_id
-            info = status.get(step_id)
-            if not info or info.get("status") != "ready":
-                continue
-            target_text = self.output_paths.get(step_id, "").strip()
-            if not target_text:
-                source = self._selected_input(step_id)
-                if source is not None:
-                    target_text = self._suggest_output(step_id, str(source))
-            if target_text and Path(target_text).is_file():
-                existing.append({"step_id": step_id, "name": config.name, "path": target_text})
-        return {"existing": existing}
+        try:
+            status = self.scan_status()
+            existing: list[dict[str, Any]] = []
+            for config in PROCESS_CONFIGS:
+                step_id = config.step_id
+                info = status.get(step_id)
+                if not info or info.get("status") != "ready":
+                    continue
+                target_text = self.output_paths.get(step_id, "").strip()
+                if not target_text:
+                    source = self._selected_input(step_id)
+                    if source is not None:
+                        target_text = self._suggest_output(step_id, str(source))
+                if target_text and Path(target_text).is_file():
+                    existing.append({"step_id": step_id, "name": config.name, "path": target_text})
+            return {"existing": existing}
+        except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
+            return {"existing": [], "error": str(exc)}
 
     def export_all_ready(
         self, node: str, day_start: str, evening_start: str, night_start: str, mode: str = "overwrite"
@@ -480,25 +506,29 @@ class Api:
         results: list[dict[str, Any]] = []
         for config in PROCESS_CONFIGS:
             step_id = config.step_id
-            info = status.get(step_id)
-            if not info or info.get("status") != "ready":
+            try:
+                info = status.get(step_id)
+                if not info or info.get("status") != "ready":
+                    continue
+
+                preview = self.load_preview(step_id, node, day_start, evening_start, night_start)
+                if not preview["ok"]:
+                    if preview.get("error") == "duplicates":
+                        message = "Has duplicate measurements that need manual resolution — open this module to resolve them."
+                    else:
+                        message = preview.get("message", "Could not organize this module.")
+                    results.append({"step_id": step_id, "name": config.name, "ok": False, "message": message})
+                    continue
+
+                if not self.output_paths.get(step_id, "").strip():
+                    source = self._selected_input(step_id)
+                    if source is not None:
+                        self.output_paths[step_id] = self._suggest_output(step_id, str(source))
+
+                export_result = self.export(step_id, mode=mode)
+            except Exception as exc:  # noqa: BLE001 - one module's failure shouldn't abort the whole batch
+                results.append({"step_id": step_id, "name": config.name, "ok": False, "message": str(exc)})
                 continue
-
-            preview = self.load_preview(step_id, node, day_start, evening_start, night_start)
-            if not preview["ok"]:
-                if preview.get("error") == "duplicates":
-                    message = "Has duplicate measurements that need manual resolution — open this module to resolve them."
-                else:
-                    message = preview.get("message", "Could not organize this module.")
-                results.append({"step_id": step_id, "name": config.name, "ok": False, "message": message})
-                continue
-
-            if not self.output_paths.get(step_id, "").strip():
-                source = self._selected_input(step_id)
-                if source is not None:
-                    self.output_paths[step_id] = self._suggest_output(step_id, str(source))
-
-            export_result = self.export(step_id, mode=mode)
             if export_result["ok"]:
                 results.append({
                     "step_id": step_id, "name": config.name, "ok": True, "path": export_result["path"],
