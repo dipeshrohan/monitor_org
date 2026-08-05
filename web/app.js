@@ -524,34 +524,46 @@ async function runExport() {
     return;
   }
 
+  let mode = "overwrite";
   const existsCheck = await api().check_output_exists(state.active);
   if (existsCheck.exists) {
-    const confirmed = await confirmOverwrite(existsCheck.path);
-    if (!confirmed) return;
+    mode = await confirmOverwrite(existsCheck.path);
+    if (mode === "cancel") return;
   }
 
   setBusy($("export-btn"), true, "Exporting…");
   $("export-btn").disabled = true;
-  const result = await api().export(state.active);
+  const result = await api().export(state.active, mode);
   setBusy($("export-btn"), false);
   $("export-btn").disabled = false;
   if (result.ok) {
-    setStatus(`Export complete: ${basename(result.path)}`);
-    showToast(`Organized data exported successfully.\n${result.path}`, "success");
+    if (typeof result.appended_count === "number") {
+      setStatus(`Export complete: ${result.appended_count} new row(s) added (${result.total_count} total).`);
+      showToast(
+        `${result.appended_count} new row(s) appended (${result.total_count} total).\n${result.path}`,
+        "success"
+      );
+    } else {
+      setStatus(`Export complete: ${basename(result.path)}`);
+      showToast(`Organized data exported successfully.\n${result.path}`, "success");
+    }
   } else {
     showToast(result.message || "Export failed.", "error");
   }
 }
 
+// Resolves to "overwrite", "append", or "cancel".
 function confirmOverwrite(path) {
-  return confirmOverwriteMessage(`"${basename(path)}" already exists and will be replaced. Continue?`);
+  return confirmOverwriteMessage(`"${basename(path)}" already exists. Replace it, or add only the new rows?`);
 }
 
 function confirmBulkOverwrite(existing) {
   const names = existing.map((e) => `${e.step_id} ${e.name} ("${basename(e.path)}")`).join(", ");
-  const plural = existing.length === 1 ? "file" : "files";
+  const isPlural = existing.length !== 1;
+  const noun = isPlural ? "files" : "file";
+  const verb = isPlural ? "exist" : "exists";
   return confirmOverwriteMessage(
-    `${existing.length} ${plural} already exist and will be replaced: ${names}. Continue?`
+    `${existing.length} ${noun} already ${verb}: ${names}. Replace them, or add only the new rows to each?`
   );
 }
 
@@ -562,17 +574,21 @@ function confirmOverwriteMessage(message) {
     $("overwrite-modal").classList.add("flex");
 
     const confirmBtn = $("overwrite-confirm");
+    const appendBtn = $("overwrite-append");
     const cancelBtn = $("overwrite-cancel");
     const cleanup = (result) => {
       $("overwrite-modal").classList.add("hidden");
       $("overwrite-modal").classList.remove("flex");
-      confirmBtn.removeEventListener("click", onConfirm);
+      confirmBtn.removeEventListener("click", onOverwrite);
+      appendBtn.removeEventListener("click", onAppend);
       cancelBtn.removeEventListener("click", onCancel);
       resolve(result);
     };
-    const onConfirm = () => cleanup(true);
-    const onCancel = () => cleanup(false);
-    confirmBtn.addEventListener("click", onConfirm);
+    const onOverwrite = () => cleanup("overwrite");
+    const onAppend = () => cleanup("append");
+    const onCancel = () => cleanup("cancel");
+    confirmBtn.addEventListener("click", onOverwrite);
+    appendBtn.addEventListener("click", onAppend);
     cancelBtn.addEventListener("click", onCancel);
   });
 }
@@ -794,15 +810,22 @@ async function runExportAll() {
     return;
   }
 
+  let mode = "overwrite";
   const overwriteCheck = await api().check_bulk_overwrites();
   if (overwriteCheck.existing.length > 0) {
-    const confirmed = await confirmBulkOverwrite(overwriteCheck.existing);
-    if (!confirmed) return;
+    mode = await confirmBulkOverwrite(overwriteCheck.existing);
+    if (mode === "cancel") return;
   }
 
   const btn = $("export-all-btn");
   btn.disabled = true;
-  const result = await api().export_all_ready(state.node, state.dayStart, state.eveningStart, state.nightStart);
+  const result = await api().export_all_ready(
+    state.node,
+    state.dayStart,
+    state.eveningStart,
+    state.nightStart,
+    mode
+  );
   btn.disabled = false;
 
   renderBulkResults(result.results);
@@ -840,7 +863,11 @@ function renderBulkResults(results) {
 
     const detail = document.createElement("p");
     detail.className = "bulk-result-detail";
-    detail.textContent = r.ok ? r.path : r.message;
+    if (r.ok && typeof r.appended_count === "number") {
+      detail.textContent = `${r.appended_count} new row(s) added (${r.total_count} total) — ${r.path}`;
+    } else {
+      detail.textContent = r.ok ? r.path : r.message;
+    }
     text.appendChild(detail);
 
     row.appendChild(text);

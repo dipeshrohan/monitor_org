@@ -431,6 +431,42 @@ def organize(
     )
 
 
+def _append_dedup_key(row: pd.Series) -> tuple[float, float, pd.Timestamp]:
+    """Identity used to tell 'this row is already in the output file' from
+    'this is a genuinely new row', when appending. Order number + Measuring
+    report number + Date is the same identity already used elsewhere to spot
+    duplicate measurements within a single organize run."""
+    order = float(row["Order number"])
+    report = float(row["Measuring report number"])
+    date = pd.Timestamp(row["Date"]).floor("min")
+    return (order, report, date)
+
+
+def merge_for_append(existing_path: Path, new_data: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Read an existing output file's Sheet1 and add only the rows from
+    new_data not already present there. Existing rows are kept exactly as
+    written and always come first; genuinely new rows are appended after
+    them — nothing already in the file is re-ordered, re-typed, or dropped.
+
+    Raises ValueError if the existing file's columns don't match new_data's
+    columns exactly: this only merges into a file this tool actually
+    produced for this same module, never into something with a different
+    or unrecognized layout.
+    """
+    existing = pd.read_excel(existing_path, sheet_name="Sheet1")
+    if list(existing.columns) != list(new_data.columns):
+        raise ValueError(
+            "The existing file's columns don't match this module's output format, "
+            "so new rows can't be safely appended to it. Export as a new file "
+            "instead, or choose a different output file."
+        )
+    existing_keys = {_append_dedup_key(row) for _, row in existing.iterrows()}
+    is_new = new_data.apply(lambda row: _append_dedup_key(row) not in existing_keys, axis=1)
+    genuinely_new = new_data[is_new]
+    merged = pd.concat([existing, genuinely_new], ignore_index=True)
+    return merged, int(len(genuinely_new))
+
+
 def export_excel(data: pd.DataFrame, issues: pd.DataFrame, output_path: Path) -> None:
     from openpyxl.styles import Alignment, Font, PatternFill
     with pd.ExcelWriter(output_path, engine="openpyxl", datetime_format="dd-mm-yy hh:mm") as writer:

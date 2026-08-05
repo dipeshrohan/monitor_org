@@ -23,6 +23,7 @@ from organizer_core import (
     PROCESS_MODULES,
     DuplicateMeasurementsError,
     export_excel,
+    merge_for_append,
     normalize,
     organize_process,
     read_source,
@@ -405,7 +406,13 @@ class Api:
     # ------------------------------------------------------------------
     # Export
     # ------------------------------------------------------------------
-    def export(self, step_id: str) -> dict[str, Any]:
+    def export(self, step_id: str, mode: str = "overwrite") -> dict[str, Any]:
+        """mode 'overwrite' (default) writes state.data as a fresh file,
+        replacing anything at the target path. mode 'append' — only
+        meaningful when the target already exists — merges in just the rows
+        not already present (see merge_for_append), keeping the existing
+        rows untouched. If the target doesn't exist yet, 'append' behaves
+        exactly like 'overwrite': there's nothing to merge into."""
         state = self.states[step_id]
         if state.data is None:
             return {"ok": False, "message": "Load and preview the data before exporting."}
@@ -415,10 +422,23 @@ class Api:
         target = Path(target_text)
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            export_excel(state.data, state.issues if state.issues is not None else pd.DataFrame(), target)
-            return {"ok": True, "path": str(target)}
+            issues = state.issues if state.issues is not None else pd.DataFrame()
+            data_to_write = state.data
+            result: dict[str, Any] = {}
+            if mode == "append" and target.is_file():
+                data_to_write, appended_count = merge_for_append(target, state.data)
+                result["appended_count"] = appended_count
+                result["total_count"] = int(len(data_to_write))
+            export_excel(data_to_write, issues, target)
+            result["ok"] = True
+            result["path"] = str(target)
+            return result
         except PermissionError:
             return {"ok": False, "message": "Close the output workbook in Excel and export again."}
+        except ValueError as exc:
+            # Raised by merge_for_append on a column mismatch — a real
+            # refusal to guess, not an unexpected crash.
+            return {"ok": False, "message": str(exc)}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "message": str(exc)}
 
@@ -445,7 +465,7 @@ class Api:
         return {"existing": existing}
 
     def export_all_ready(
-        self, node: str, day_start: str, evening_start: str, night_start: str
+        self, node: str, day_start: str, evening_start: str, night_start: str, mode: str = "overwrite"
     ) -> dict[str, Any]:
         """Load, preview and export every module scan_status() currently shows
         as 'ready' (has matching data), in one action. Never resolves
@@ -453,7 +473,9 @@ class Api:
         duplicate resolution is skipped and reported, not guessed at. If a
         ready module has no output path chosen yet, one is generated the same
         way the UI suggests one, so this works without having to click into
-        every module first."""
+        every module first. mode is passed straight through to export() for
+        every module — 'append' only actually merges for modules that already
+        have a file there; the rest just get created normally regardless."""
         status = self.scan_status()
         results: list[dict[str, Any]] = []
         for config in PROCESS_CONFIGS:
@@ -476,9 +498,13 @@ class Api:
                 if source is not None:
                     self.output_paths[step_id] = self._suggest_output(step_id, str(source))
 
-            export_result = self.export(step_id)
+            export_result = self.export(step_id, mode=mode)
             if export_result["ok"]:
-                results.append({"step_id": step_id, "name": config.name, "ok": True, "path": export_result["path"]})
+                results.append({
+                    "step_id": step_id, "name": config.name, "ok": True, "path": export_result["path"],
+                    "appended_count": export_result.get("appended_count"),
+                    "total_count": export_result.get("total_count"),
+                })
             else:
                 results.append({
                     "step_id": step_id, "name": config.name, "ok": False,
